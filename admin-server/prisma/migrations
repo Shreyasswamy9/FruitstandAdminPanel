@@ -1,0 +1,6 @@
+The migrations directory is typically used by Prisma to store migration files generated when you make changes to your Prisma schema. Since this directory is meant to contain migration files and is usually populated automatically by Prisma commands, it should be empty at this point. 
+
+Here is the content for the file:
+
+/admin-server/admin-server/prisma/migrations
+<!-- This directory is intentionally left blank. -->
