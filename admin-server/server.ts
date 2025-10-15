@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import prisma from './config/database';
 import { createServer } from 'net';
 import { generateOrdersPage } from './pages/orders';
+import { generateAnalyticsPage } from './pages/analytics';
 
 dotenv.config();
 
@@ -76,6 +77,15 @@ app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   
   try {
+    // Option 1: Hardcoded login (for testing)
+    if (email === 'admin@fruitstand.com' && password === 'admin123') {
+      const sessionId = Date.now().toString() + Math.random().toString();
+      sessions.set(sessionId, { id: 1, name: 'Admin User', email: 'admin@fruitstand.com' });
+      res.redirect(`/dashboard?session=${sessionId}`);
+      return;
+    }
+
+    // Option 2: Database authentication (original)
     if (prisma.user) {
       const user = await prisma.user.findUnique({ where: { email } });
       
@@ -225,6 +235,10 @@ app.get('/dashboard', requireAuth, (req: any, res) => {
 // Page routes
 app.get('/orders', requireAuth, (req: any, res) => {
   res.send(generateOrdersPage(req));
+});
+
+app.get('/analytics', requireAuth, (req: any, res) => {
+  res.send(generateAnalyticsPage(req));
 });
 
 app.get('/products', requireAuth, async (req: any, res) => {
