@@ -174,13 +174,13 @@ app.get('/', (req, res) => {
       <style>
         body { font-family: Arial, sans-serif; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
         .login-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .logo { font-size: 48px; margin-bottom: 10px; }
         h1 { color: #333; margin-bottom: 30px; }
+        .company-info { margin-bottom: 30px; color: #666; font-size: 14px; }
         .microsoft-btn { width: 100%; padding: 15px; background: #0078d4; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; text-decoration: none; display: block; margin-bottom: 20px; transition: background-color 0.2s; }
         .microsoft-btn:hover { background: #106ebe; }
-        ${error ? `<div class="error">
-          ❌ Authentication failed: ${error}<br>
-          ${decodedDetails ? `Details: ${decodedDetails}` : 'Please try again or contact IT support.'}
-        </div>` : ''}
+        .error { color: #dc3545; margin-bottom: 20px; padding: 10px; background: #f8d7da; border-radius: 5px; font-size: 14px; }
+        .secure-notice { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; font-size: 12px; margin-top: 20px; }
       </style>
     </head>
     <body>
@@ -193,7 +193,7 @@ app.get('/', (req, res) => {
         
         ${error ? `<div class="error">
           ❌ Authentication failed: ${error}<br>
-          ${details ? `Details: ${decodeURIComponent(details)}` : 'Please try again or contact IT support.'}
+          ${decodedDetails ? `Details: ${decodedDetails}` : 'Please try again or contact IT support.'}
         </div>` : ''}
         
         <a href="${microsoftAuthUrl}" class="microsoft-btn">
@@ -221,7 +221,7 @@ app.get('/test', (req, res) => {
 // Git deployment test page
 app.get('/git-test', (req, res) => {
   const deployTime = new Date().toISOString();
-  const version = "v1.0.1"; // Change this number to test git pulls
+  const version = "v1.0.2"; // Changed this to test git deployment
   
   res.send(`
     <!DOCTYPE html>
@@ -233,6 +233,7 @@ app.get('/git-test', (req, res) => {
         .status-box { padding: 20px; border-radius: 10px; margin: 20px 0; }
         .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
         .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
         code { background: #f8f9fa; padding: 2px 5px; border-radius: 3px; }
       </style>
     </head>
@@ -244,6 +245,12 @@ app.get('/git-test', (req, res) => {
         <p><strong>Version:</strong> ${version}</p>
         <p><strong>Deploy Time:</strong> ${deployTime}</p>
         <p><strong>Server:</strong> Fruitstand Admin Panel</p>
+      </div>
+      
+      <div class="status-box warning">
+        <h3>🔄 OAuth Callback Issue</h3>
+        <p>The OAuth callback is still showing test data instead of processing the full authentication flow.</p>
+        <p><strong>Status:</strong> The callback route exists but needs the full OAuth processing code.</p>
       </div>
       
       <div class="status-box info">
@@ -692,6 +699,122 @@ app.get('/api/products', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch products' });
+  }
+});
+
+// Microsoft OAuth callback - enhanced error handling
+app.get('/auth/callback', async (req, res) => {
+  console.log('OAuth callback received:', req.query);
+  
+  // Check if Azure is properly configured
+  if (!process.env.AZURE_CLIENT_ID || !process.env.AZURE_CLIENT_SECRET) {
+    console.error('Azure OAuth not configured');
+    return res.redirect('/?error=oauth_not_configured');
+  }
+
+  const { code, error, error_description } = req.query;
+  
+  if (error) {
+    console.error('OAuth error from Microsoft:', error, error_description);
+    return res.redirect(`/?error=oauth_error&details=${encodeURIComponent(error_description || error)}`);
+  }
+
+  if (!code) {
+    console.error('No authorization code received');
+    return res.redirect('/?error=no_code');
+  }
+
+  try {
+    console.log('Exchanging code for token...');
+    
+    // Exchange code for access token
+    const tokenResponse = await axios.post(
+      `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`, 
+      new URLSearchParams({
+        client_id: process.env.AZURE_CLIENT_ID!,
+        client_secret: process.env.AZURE_CLIENT_SECRET!,
+        code: code as string,
+        grant_type: 'authorization_code',
+        redirect_uri: process.env.AZURE_REDIRECT_URI!
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    console.log('Token exchange successful');
+    const { access_token } = tokenResponse.data;
+
+    // Get user info from Microsoft Graph
+    console.log('Fetching user info...');
+    const userResponse = await axios.get('https://graph.microsoft.com/v1.0/me', {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
+
+    const msUser = userResponse.data;
+    console.log('User info received:', { id: msUser.id, email: msUser.mail || msUser.userPrincipalName });
+    
+    // Create or update user in database
+    let user;
+    const userEmail = msUser.mail || msUser.userPrincipalName;
+    
+    try {
+      if (prisma.user) {
+        user = await prisma.user.upsert({
+          where: { email: userEmail },
+          update: {
+            name: msUser.displayName
+          },
+          create: {
+            email: userEmail,
+            name: msUser.displayName,
+            password: 'oauth' // OAuth users don't need passwords
+          }
+        });
+      } else {
+        // Fallback if database not ready
+        user = {
+          id: msUser.id,
+          name: msUser.displayName,
+          email: userEmail
+        };
+      }
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+      user = {
+        id: msUser.id,
+        name: msUser.displayName,
+        email: userEmail
+      };
+    }
+
+    // Create session
+    const sessionId = Date.now().toString() + Math.random().toString();
+    sessions.set(sessionId, { 
+      id: user.id, 
+      name: user.name, 
+      email: user.email 
+    });
+
+    // Log successful login
+    try {
+      await logActivity(user.id.toString(), user.email, 'LOGIN', {
+        method: 'microsoft_oauth',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+    } catch (logError) {
+      console.error('Failed to log activity:', logError);
+    }
+
+    console.log('Login successful, redirecting to dashboard');
+    res.redirect(`/dashboard?session=${sessionId}`);
+
+  } catch (error) {
+    console.error('OAuth error details:', error.response?.data || error.message);
+    res.redirect('/?error=oauth_failed');
   }
 });
 
