@@ -24,18 +24,18 @@ async function createDefaultUser() {
     if (prisma.user) {
       // Check if admin user already exists
       const existingUser = await prisma.user.findUnique({
-        where: { email: 'shreyas@fruitstand.com' }
+        where: { email: 'shreyas@fruitstandny.com' }
       });
 
       if (!existingUser) {
         await prisma.user.create({
           data: {
-            name: 'shreyas',
-            email: 'shreyas@fruitstand.com',
-            password: 'helloworld'
+            name: 'Shreyas',
+            email: 'shreyas@fruitstandny.com',
+            password: 'admin123'
           }
         });
-        console.log('✅ Default admin user created - Email: shreyas@fruitstand.com, Password: helloworld');
+        console.log('✅ Default admin user created - Email: shreyas@fruitstandny.com, Password: admin123');
       } else {
         console.log('ℹ️  Admin user already exists');
       }

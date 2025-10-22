@@ -40,82 +40,82 @@ export function generateAnalyticsPage(req: any) {
       </div>
       
       <div class="main-content">
+        <!-- Loading overlay -->
+        <div id="loading" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; color: white;">
+          <div>Loading analytics data...</div>
+        </div>
+
         <div class="analytics-grid">
-          <!-- Google Analytics Card -->
+          <!-- Google Tag Manager Card -->
           <div class="analytics-card">
             <div class="card-title">
-              📊 Google Analytics
-              <span class="pixel-status active">Connected</span>
+              📊 Google Tag Manager
+              <span class="pixel-status" id="gtm-status">Checking...</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Property ID:</span>
-              <span class="metric-value">GA4-XXXXXXXXX</span>
+              <span class="metric-label">Container ID:</span>
+              <span class="metric-value" id="gtm-container">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Sessions (Last 7 days):</span>
-              <span class="metric-value">2,847 <span class="metric-change positive">+12.5%</span></span>
+              <span class="metric-value" id="gtm-sessions">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Page Views:</span>
-              <span class="metric-value">8,634 <span class="metric-change positive">+8.2%</span></span>
+              <span class="metric-value" id="gtm-pageviews">Loading...</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Bounce Rate:</span>
-              <span class="metric-value">42.3% <span class="metric-change negative">+2.1%</span></span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Avg. Session Duration:</span>
-              <span class="metric-value">3m 42s <span class="metric-change positive">+15.3%</span></span>
+              <span class="metric-label">Events Fired:</span>
+              <span class="metric-value" id="gtm-events">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Conversion Rate:</span>
-              <span class="metric-value">2.8% <span class="metric-change positive">+0.3%</span></span>
+              <span class="metric-value" id="gtm-conversion">Loading...</span>
             </div>
           </div>
 
-          <!-- Facebook Pixel Card -->
+          <!-- Meta/Facebook Pixel Card -->
           <div class="analytics-card">
             <div class="card-title">
-              📘 Facebook Pixel
-              <span class="pixel-status active">Active</span>
+              📘 Meta Pixel (Facebook)
+              <span class="pixel-status" id="meta-status">Checking...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Pixel ID:</span>
-              <span class="metric-value">123456789012345</span>
+              <span class="metric-value" id="meta-pixel-id">Loading...</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Events Fired (24h):</span>
-              <span class="metric-value">1,234</span>
+              <span class="metric-label">Events (24h):</span>
+              <span class="metric-value" id="meta-events">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Page Views:</span>
-              <span class="metric-value">856</span>
+              <span class="metric-value" id="meta-pageviews">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Add to Cart:</span>
-              <span class="metric-value">127</span>
+              <span class="metric-value" id="meta-addtocart">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Purchase Events:</span>
-              <span class="metric-value">23</span>
+              <span class="metric-value" id="meta-purchases">Loading...</span>
             </div>
             <div class="metric">
               <span class="metric-label">Revenue Tracked:</span>
-              <span class="metric-value">$2,847.50</span>
+              <span class="metric-value" id="meta-revenue">Loading...</span>
             </div>
           </div>
 
-          <!-- Meta Tags & SEO Card -->
+          <!-- TikTok Pixel Card -->
           <div class="analytics-card">
             <div class="card-title">
-              🔍 SEO & Meta Tags
-              <span class="pixel-status active">Optimized</span>
+              🎵 TikTok Pixel
+              <span class="pixel-status" id="tiktok-status">Checking...</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Meta Description:</span>
-              <span class="metric-value">Present ✓</span>
-            </div>
-            <div class="metric">
+              <span class="metric-label">Pixel ID:</span>
+              <span class="metric-value" id="tiktok-pixel-id">Loading...</span>
+            </
               <span class="metric-label">Open Graph Tags:</span>
               <span class="metric-value">Complete ✓</span>
             </div>
