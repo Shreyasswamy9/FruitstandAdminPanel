@@ -117,8 +117,22 @@ app.use(express.urlencoded({ extended: true }));
 
 // Landing page - Microsoft OAuth only
 app.get('/', (req, res) => {
-  const error = req.query.error;
-  const details = req.query.details;
+  const error = ((): string | undefined => {
+    const v = req.query.error;
+    if (Array.isArray(v)) return typeof v[0] === 'string' ? v[0] : undefined;
+    if (typeof v === 'string') return v;
+    return undefined;
+  })();
+  const details = ((): string | undefined => {
+    const v = req.query.details;
+    if (Array.isArray(v)) return typeof v[0] === 'string' ? v[0] : undefined;
+    if (typeof v === 'string') return v;
+    if (v !== undefined && v !== null) return String(v);
+    return undefined;
+  })();
+  const decodedDetails = details ? (() => {
+    try { return decodeURIComponent(details); } catch { return details; }
+  })() : undefined;
   
   // Check if Azure credentials are configured
   const azureConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET;
@@ -163,10 +177,10 @@ app.get('/', (req, res) => {
         h1 { color: #333; margin-bottom: 30px; }
         .microsoft-btn { width: 100%; padding: 15px; background: #0078d4; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; text-decoration: none; display: block; margin-bottom: 20px; transition: background-color 0.2s; }
         .microsoft-btn:hover { background: #106ebe; }
-        .error { color: #dc3545; margin-bottom: 20px; padding: 10px; background: #f8d7da; border-radius: 5px; }
-        .logo { font-size: 48px; margin-bottom: 10px; }
-        .company-info { margin-bottom: 30px; color: #666; font-size: 14px; }
-        .secure-notice { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; font-size: 12px; margin-top: 20px; }
+        ${error ? `<div class="error">
+          ❌ Authentication failed: ${error}<br>
+          ${decodedDetails ? `Details: ${decodedDetails}` : 'Please try again or contact IT support.'}
+        </div>` : ''}
       </style>
     </head>
     <body>
@@ -204,21 +218,61 @@ app.get('/test', (req, res) => {
   `);
 });
 
-// Simple test callback route (replace the complex one temporarily)
-app.get('/auth/callback', (req, res) => {
-  console.log('Callback hit with query:', req.query);
+// Git deployment test page
+app.get('/git-test', (req, res) => {
+  const deployTime = new Date().toISOString();
+  const version = "v1.0.1"; // Change this number to test git pulls
   
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>OAuth Callback Test</title>
+      <title>Git Deployment Test</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .status-box { padding: 20px; border-radius: 10px; margin: 20px 0; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        code { background: #f8f9fa; padding: 2px 5px; border-radius: 3px; }
+      </style>
     </head>
     <body>
-      <h1>✅ Callback Route Works!</h1>
-      <p><strong>Query Parameters:</strong></p>
-      <pre>${JSON.stringify(req.query, null, 2)}</pre>
-      <p><a href="/">Back to Login</a></p>
+      <h1>🚀 Git Deployment Test Page</h1>
+      
+      <div class="status-box success">
+        <h3>✅ Deployment Status: ACTIVE</h3>
+        <p><strong>Version:</strong> ${version}</p>
+        <p><strong>Deploy Time:</strong> ${deployTime}</p>
+        <p><strong>Server:</strong> Fruitstand Admin Panel</p>
+      </div>
+      
+      <div class="status-box info">
+        <h3>📋 Test Instructions:</h3>
+        <ol>
+          <li>Make a change to this page in your code</li>
+          <li>Commit and push to git</li>
+          <li>Refresh this page</li>
+          <li>Check if the changes appear automatically</li>
+        </ol>
+      </div>
+      
+      <div class="status-box info">
+        <h3>🔗 Navigation:</h3>
+        <p><a href="/">← Back to Login</a></p>
+        <p><a href="/test">Server Test</a></p>
+        <p><code>Last updated: ${new Date().toLocaleString()}</code></p>
+      </div>
+      
+      <div class="status-box">
+        <h3>🔄 Git Pull Test Results:</h3>
+        <p id="git-status">Checking git status...</p>
+      </div>
+      
+      <script>
+        // Simple client-side test
+        document.getElementById('git-status').innerHTML = 
+          'If you can see version ${version}, git deployment is working! 🎉';
+      </script>
     </body>
     </html>
   `);
