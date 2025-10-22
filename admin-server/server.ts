@@ -5,6 +5,9 @@ import prisma from './config/database';
 import { createServer } from 'net';
 import { generateOrdersPage } from './pages/orders';
 import { generateAnalyticsPage } from './pages/analytics';
+import { generateCommunicationsPage } from './pages/communications';
+import { generateActivityPage } from './pages/activity';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -13,12 +16,95 @@ const app = express();
 // Simple session storage (in production, use proper session management)
 const sessions = new Map();
 
-// Authentication middleware
+// Activity logging function
+async function logActivity(userId: string, userEmail: string, action: string, details: any = {}) {
+  try {
+    const activityModel = (prisma as any).activityLog;
+    if (activityModel && typeof activityModel.create === 'function') {
+      await activityModel.create({
+        data: {
+          userId,
+          userEmail,
+          action,
+          details: JSON.stringify(details),
+          timestamp: new Date(),
+          ipAddress: details.ipAddress || 'unknown'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Failed to log activity:', error);
+  }
+}
+
+// Authentication middleware with activity logging
 function requireAuth(req: any, res: any, next: any) {
   const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
   if (sessionId && sessions.has(sessionId)) {
     req.user = sessions.get(sessionId);
+    // Log page access
+    logActivity(req.user.id, req.user.email, 'PAGE_ACCESS', {
+      page: req.path,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
     next();
+  } else {
+    res.redirect('/?error=unauthorized');
+  }
+}
+
+// Admin authorization middleware
+function requireAdmin(req: any, res: any, next: any) {
+  const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
+  if (sessionId && sessions.has(sessionId)) {
+    req.user = sessions.get(sessionId);
+    
+    // Check if user is admin (check against Microsoft email)
+    const isShreyas = req.user.email === 'shreyas@fruitstandny.com' || 
+                      req.user.email.toLowerCase().includes('shreyas') ||
+                      req.user.email === process.env.ADMIN_EMAIL; // Allow env variable override
+    
+    if (isShreyas) {
+      // Log admin access
+      logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS', {
+        page: req.path,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+      next();
+    } else {
+      // Log unauthorized admin attempt
+      logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS_DENIED', {
+        page: req.path,
+        ipAddress: req.ip,
+        reason: 'insufficient_permissions'
+      });
+      res.status(403).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Access Denied</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+            .error-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+            .error-icon { font-size: 64px; margin-bottom: 20px; }
+            .error-title { color: #dc3545; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+            .error-message { color: #666; margin-bottom: 30px; }
+            .back-btn { background: #667eea; color: white; padding: 12px 24px; border: none; border-radius: 5px; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <div class="error-container">
+            <div class="error-icon">🔒</div>
+            <div class="error-title">Access Denied</div>
+            <div class="error-message">You don't have permission to access this admin feature. Only authorized administrators can view this page.</div>
+            <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back to Dashboard</a>
+          </div>
+        </body>
+        </html>
+      `);
+    }
   } else {
     res.redirect('/?error=unauthorized');
   }
@@ -29,9 +115,43 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Landing page - Login form
+// Landing page - Microsoft OAuth only
 app.get('/', (req, res) => {
   const error = req.query.error;
+  const details = req.query.details;
+  
+  // Check if Azure credentials are configured
+  const azureConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET;
+  
+  if (!azureConfigured) {
+    return res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Configuration Error</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+          .error-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+          .error-title { color: #dc3545; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="error-container">
+          <div class="error-title">⚠️ Configuration Error</div>
+          <p>Microsoft Azure OAuth is not configured. Please contact your administrator.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  const microsoftAuthUrl = `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/authorize?` +
+    `client_id=${process.env.AZURE_CLIENT_ID}&` +
+    `response_type=code&` +
+    `redirect_uri=${encodeURIComponent(process.env.AZURE_REDIRECT_URI!)}&` +
+    `scope=openid%20profile%20email%20User.Read&` +
+    `response_mode=query`;
+
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -39,74 +159,76 @@ app.get('/', (req, res) => {
       <title>Fruitstand Admin - Login</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .login-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        h1 { text-align: center; color: #333; margin-bottom: 30px; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; color: #555; font-weight: bold; }
-        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: #667eea; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
-        button:hover { background: #5a6fd8; }
-        .error { color: red; text-align: center; margin-bottom: 20px; }
-        .logo { text-align: center; font-size: 48px; margin-bottom: 10px; }
+        .login-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h1 { color: #333; margin-bottom: 30px; }
+        .microsoft-btn { width: 100%; padding: 15px; background: #0078d4; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; text-decoration: none; display: block; margin-bottom: 20px; transition: background-color 0.2s; }
+        .microsoft-btn:hover { background: #106ebe; }
+        .error { color: #dc3545; margin-bottom: 20px; padding: 10px; background: #f8d7da; border-radius: 5px; }
+        .logo { font-size: 48px; margin-bottom: 10px; }
+        .company-info { margin-bottom: 30px; color: #666; font-size: 14px; }
+        .secure-notice { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; font-size: 12px; margin-top: 20px; }
       </style>
     </head>
     <body>
       <div class="login-container">
         <div class="logo">🍎</div>
         <h1>Fruitstand Admin Panel</h1>
-        ${error ? `<div class="error">Invalid credentials. Please try again.</div>` : ''}
-        <form action="/login" method="POST">
-          <div class="form-group">
-            <label for="email">Email:</label>
-            <input type="email" id="email" name="email" required>
-          </div>
-          <div class="form-group">
-            <label for="password">Password:</label>
-            <input type="password" id="password" name="password" required>
-          </div>
-          <button type="submit">Login</button>
-        </form>
+        <div class="company-info">
+          Secure access with your Microsoft work account
+        </div>
+        
+        ${error ? `<div class="error">
+          ❌ Authentication failed: ${error}<br>
+          ${details ? `Details: ${decodeURIComponent(details)}` : 'Please try again or contact IT support.'}
+        </div>` : ''}
+        
+        <a href="${microsoftAuthUrl}" class="microsoft-btn">
+          🏢 Sign in with Microsoft
+        </a>
+        
+        <div class="secure-notice">
+          🔒 This admin panel requires Microsoft authentication through your organization's Azure AD.
+        </div>
       </div>
     </body>
     </html>
   `);
 });
 
-// Login route
-app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  
-  try {
-    // Option 1: Hardcoded login (for testing)
-    if (email === 'admin@fruitstand.com' && password === 'admin123') {
-      const sessionId = Date.now().toString() + Math.random().toString();
-      sessions.set(sessionId, { id: 1, name: 'Admin User', email: 'admin@fruitstand.com' });
-      res.redirect(`/dashboard?session=${sessionId}`);
-      return;
-    }
+// Add a simple test route to verify server is working
+app.get('/test', (req, res) => {
+  res.send(`
+    <h1>Server is working!</h1>
+    <p>Time: ${new Date().toISOString()}</p>
+    <p><a href="/">Go to Login</a></p>
+  `);
+});
 
-    // Option 2: Database authentication (original)
-    if (prisma.user) {
-      const user = await prisma.user.findUnique({ where: { email } });
-      
-      if (user && user.password === password) {
-        const sessionId = Date.now().toString() + Math.random().toString();
-        sessions.set(sessionId, { id: user.id, name: user.name, email: user.email });
-        res.redirect(`/dashboard?session=${sessionId}`);
-      } else {
-        res.redirect('/?error=invalid');
-      }
-    } else {
-      res.redirect('/?error=database');
-    }
-  } catch (error) {
-    res.redirect('/?error=server');
-  }
+// Simple test callback route (replace the complex one temporarily)
+app.get('/auth/callback', (req, res) => {
+  console.log('Callback hit with query:', req.query);
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>OAuth Callback Test</title>
+    </head>
+    <body>
+      <h1>✅ Callback Route Works!</h1>
+      <p><strong>Query Parameters:</strong></p>
+      <pre>${JSON.stringify(req.query, null, 2)}</pre>
+      <p><a href="/">Back to Login</a></p>
+    </body>
+    </html>
+  `);
 });
 
 // Main dashboard - protected route
 app.get('/dashboard', requireAuth, (req: any, res) => {
   const user = req.user;
+  const isAdmin = user.email === 'shreyas@fruitstandny.com' || user.email.toLowerCase().includes('shreyas');
+  
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -139,73 +261,16 @@ app.get('/dashboard', requireAuth, (req: any, res) => {
       <div class="main-content">
         <h2>Dashboard Overview</h2>
         <div class="dashboard-grid">
-          <!-- Existing cards -->
           <div class="dashboard-card" onclick="location.href='/orders${req.query.session ? `?session=${req.query.session}` : ''}'">
             <div class="card-icon">📦</div>
             <div class="card-title">Orders Management</div>
             <div class="card-desc">View and manage customer orders</div>
           </div>
           
-          <!-- New fashion-specific cards -->
           <div class="dashboard-card" onclick="location.href='/products${req.query.session ? `?session=${req.query.session}` : ''}'">
             <div class="card-icon">👕</div>
             <div class="card-title">Product Catalog</div>
             <div class="card-desc">Manage clothing items, sizes, and variants</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/inventory${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">📊</div>
-            <div class="card-title">Inventory & Stock</div>
-            <div class="card-desc">Track stock levels by size and color</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/collections${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">🎨</div>
-            <div class="card-title">Collections</div>
-            <div class="card-desc">Manage seasonal collections and lookbooks</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/customers${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">👥</div>
-            <div class="card-title">Customer Management</div>
-            <div class="card-desc">View customer profiles and purchase history</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/promotions${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">🏷️</div>
-            <div class="card-title">Promotions & Discounts</div>
-            <div class="card-desc">Create and manage discount codes</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/returns${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">↩️</div>
-            <div class="card-title">Returns & Exchanges</div>
-            <div class="card-desc">Process returns and size exchanges</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/content${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">📸</div>
-            <div class="card-title">Content Management</div>
-            <div class="card-desc">Manage product photos and descriptions</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/shipping${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">🚚</div>
-            <div class="card-title">Shipping & Logistics</div>
-            <div class="card-desc">Configure shipping zones and rates</div>
-          </div>
-          
-          <div class="dashboard-card" onclick="location.href='/suppliers${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">🏭</div>
-            <div class="card-title">Supplier Management</div>
-            <div class="card-desc">Manage vendors and purchase orders</div>
-          </div>
-          
-          <!-- Existing cards -->
-          <div class="dashboard-card" onclick="location.href='/reviews${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">⭐</div>
-            <div class="card-title">Reviews</div>
-            <div class="card-desc">Monitor customer reviews and ratings</div>
           </div>
           
           <div class="dashboard-card" onclick="location.href='/analytics${req.query.session ? `?session=${req.query.session}` : ''}'">
@@ -214,11 +279,25 @@ app.get('/dashboard', requireAuth, (req: any, res) => {
             <div class="card-desc">Sales reports and business insights</div>
           </div>
           
-          <div class="dashboard-card" onclick="location.href='/communications${req.query.session ? `?session=${req.query.session}` : ''}'">
-            <div class="card-icon">💬</div>
-            <div class="card-title">Communications</div>
-            <div class="card-desc">Customer messages and notifications</div>
+          <div class="dashboard-card" onclick="location.href='/activity${req.query.session ? `?session=${req.query.session}` : ''}'">
+            <div class="card-icon">📊</div>
+            <div class="card-title">Activity Tracking</div>
+            <div class="card-desc">Monitor all user actions and changes</div>
           </div>
+          
+          ${isAdmin ? `
+          <div class="dashboard-card" onclick="location.href='/activity${req.query.session ? `?session=${req.query.session}` : ''}'">
+            <div class="card-icon">📊</div>
+            <div class="card-title">Activity Tracking</div>
+            <div class="card-desc">Monitor all user actions and changes (Admin Only)</div>
+          </div>
+          
+          <div class="dashboard-card" onclick="location.href='/admin/users${req.query.session ? `?session=${req.query.session}` : ''}'">
+            <div class="card-icon">👥</div>
+            <div class="card-title">User Management</div>
+            <div class="card-desc">Manage user accounts and permissions (Admin Only)</div>
+          </div>
+          ` : ''}
         </div>
       </div>
       
@@ -239,6 +318,23 @@ app.get('/orders', requireAuth, (req: any, res) => {
 
 app.get('/analytics', requireAuth, (req: any, res) => {
   res.send(generateAnalyticsPage(req));
+});
+
+app.get('/communications', requireAuth, (req: any, res) => {
+  res.send(generateCommunicationsPage(req));
+});
+app.get('/activity', requireAdmin, async (req: any, res) => {
+  try {
+    const activityModel = (prisma as any).activityLog;
+    const activities = activityModel ? await activityModel.findMany({
+      orderBy: { timestamp: 'desc' },
+      take: 500 // Limit to last 500 activities
+    }) : [];
+    
+    res.send(generateActivityPage(req, activities));
+  } catch (error) {
+    res.status(500).send('Error loading activities');
+  }
 });
 
 app.get('/products', requireAuth, async (req: any, res) => {
@@ -391,12 +487,21 @@ app.get('/products', requireAuth, async (req: any, res) => {
 app.post('/orders/create', requireAuth, async (req: any, res) => {
   try {
     const { total, status } = req.body;
+    let order;
     if (prisma.order) {
-      await prisma.order.create({
+      order = await prisma.order.create({
         data: {
           total: parseFloat(total),
           status: status || 'pending'
         }
+      });
+      
+      // Log order creation
+      await logActivity(req.user.id.toString(), req.user.email, 'ORDER_CREATE', {
+        orderId: order.id,
+        total: parseFloat(total),
+        status: status || 'pending',
+        ipAddress: req.ip
       });
     }
     res.redirect(`/orders${req.query.session ? `?session=${req.query.session}` : ''}`);
@@ -405,12 +510,12 @@ app.post('/orders/create', requireAuth, async (req: any, res) => {
   }
 });
 
-// API routes for products
 app.post('/products/create', requireAuth, async (req: any, res) => {
   try {
     const { name, description, price, category, inStock } = req.body;
+    let product;
     if (prisma.product) {
-      await prisma.product.create({
+      product = await prisma.product.create({
         data: {
           name,
           description: description || null,
@@ -418,6 +523,15 @@ app.post('/products/create', requireAuth, async (req: any, res) => {
           category,
           inStock: inStock === 'true'
         }
+      });
+      
+      // Log product creation
+      await logActivity(req.user.id.toString(), req.user.email, 'PRODUCT_CREATE', {
+        productId: product.id,
+        name,
+        price: parseFloat(price),
+        category,
+        ipAddress: req.ip
       });
     }
     res.redirect(`/products${req.query.session ? `?session=${req.query.session}` : ''}`);
@@ -429,12 +543,52 @@ app.post('/products/create', requireAuth, async (req: any, res) => {
 app.post('/products/:id/delete', requireAuth, async (req: any, res) => {
   try {
     const { id } = req.params;
+    let product;
     if (prisma.product) {
+      // Get product info before deleting for logging
+      product = await prisma.product.findUnique({ where: { id } });
       await prisma.product.delete({ where: { id } });
+      
+      // Log product deletion
+      await logActivity(req.user.id.toString(), req.user.email, 'PRODUCT_DELETE', {
+        productId: id,
+        productName: product?.name || 'unknown',
+        ipAddress: req.ip
+      });
     }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Error deleting product' });
+  }
+});
+
+// Add fulfillment update endpoint with logging
+app.post('/orders/:id/fulfillment', requireAuth, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    if (prisma.order) {
+      const order = await prisma.order.findUnique({ where: { id } });
+      if (order) {
+        await prisma.order.update({
+          where: { id },
+          data: { status }
+        });
+        
+        // Log fulfillment update
+        await logActivity(req.user.id.toString(), req.user.email, 'FULFILLMENT_UPDATE', {
+          orderId: id,
+          oldStatus: order.status,
+          newStatus: status,
+          ipAddress: req.ip
+        });
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Error updating fulfillment' });
   }
 });
 
@@ -503,8 +657,10 @@ function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 // Start server with dynamic port
 findAvailablePort().then((port) => {
-  app.listen(port, () => {
+  app.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://localhost:${port}`);
+    console.log(`🚀 Server also accessible at http://192.168.1.50:${port}`);
+    console.log(`🚀 Server also accessible at http://fruitstand.local:${port}`);
     console.log(`📊 Admin Panel API ready`);
   });
 }).catch((err) => {
