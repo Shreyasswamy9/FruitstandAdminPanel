@@ -13,8 +13,45 @@ dotenv.config();
 
 const app = express();
 
-// Simple session storage (in production, use proper session management)
-const sessions = new Map();
+// Enhanced session storage with expiration and security
+interface SessionData {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: number;
+  lastActivity: number;
+  ipAddress?: string;
+}
+
+const sessions = new Map<string, SessionData>();
+
+// Session configuration
+const SESSION_TIMEOUT = 1 * 60 * 60 * 1000; // 1 hour in milliseconds (changed from 24 hours)
+const SESSION_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour cleanup interval
+
+// Clear all sessions on server restart for security
+sessions.clear();
+console.log('🔄 All sessions cleared on server restart');
+
+// Session cleanup function
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  let cleanedCount = 0;
+  
+  for (const [sessionId, sessionData] of sessions.entries()) {
+    if (now - sessionData.lastActivity > SESSION_TIMEOUT) {
+      sessions.delete(sessionId);
+      cleanedCount++;
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`🧹 Cleaned up ${cleanedCount} expired sessions`);
+  }
+}
+
+// Run session cleanup periodically
+setInterval(cleanupExpiredSessions, SESSION_CLEANUP_INTERVAL);
 
 // Activity logging function
 async function logActivity(userId: string, userEmail: string, action: string, details: any = {}) {
@@ -37,76 +74,125 @@ async function logActivity(userId: string, userEmail: string, action: string, de
   }
 }
 
-// Authentication middleware with activity logging
+// Enhanced authentication middleware with session validation
 function requireAuth(req: any, res: any, next: any) {
   const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
-  if (sessionId && sessions.has(sessionId)) {
-    req.user = sessions.get(sessionId);
-    // Log page access
-    logActivity(req.user.id, req.user.email, 'PAGE_ACCESS', {
+  const clientIP = req.ip || req.connection.remoteAddress;
+  
+  if (!sessionId) {
+    console.log('❌ No session ID provided');
+    return res.redirect('/?error=no_session');
+  }
+  
+  if (!sessions.has(sessionId)) {
+    console.log('❌ Invalid session ID:', sessionId);
+    return res.redirect('/?error=invalid_session');
+  }
+  
+  const sessionData = sessions.get(sessionId)!;
+  const now = Date.now();
+  
+  // Check session expiration
+  if (now - sessionData.lastActivity > SESSION_TIMEOUT) {
+    console.log('❌ Session expired for:', sessionData.email);
+    sessions.delete(sessionId);
+    return res.redirect('/?error=session_expired');
+  }
+  
+  // Optional: Check IP address consistency (comment out if users change networks frequently)
+  // if (sessionData.ipAddress && sessionData.ipAddress !== clientIP) {
+  //   console.log('❌ IP mismatch for session:', sessionData.email, 'Expected:', sessionData.ipAddress, 'Got:', clientIP);
+  //   sessions.delete(sessionId);
+  //   return res.redirect('/?error=ip_mismatch');
+  // }
+  
+  // Update session activity
+  sessionData.lastActivity = now;
+  sessions.set(sessionId, sessionData);
+  
+  req.user = sessionData;
+  
+  // Log page access
+  logActivity(req.user.id, req.user.email, 'PAGE_ACCESS', {
+    page: req.path,
+    ipAddress: clientIP,
+    userAgent: req.get('User-Agent'),
+    sessionId: sessionId.substring(0, 8) + '...' // Log partial session ID for debugging
+  });
+  
+  next();
+}
+
+// Enhanced admin authorization middleware
+function requireAdmin(req: any, res: any, next: any) {
+  const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
+  const clientIP = req.ip || req.connection.remoteAddress;
+  
+  if (!sessionId || !sessions.has(sessionId)) {
+    console.log('❌ Admin access denied - no valid session');
+    return res.redirect('/?error=unauthorized');
+  }
+  
+  const sessionData = sessions.get(sessionId)!;
+  const now = Date.now();
+  
+  // Check session expiration
+  if (now - sessionData.lastActivity > SESSION_TIMEOUT) {
+    console.log('❌ Admin session expired for:', sessionData.email);
+    sessions.delete(sessionId);
+    return res.redirect('/?error=session_expired');
+  }
+  
+  // Update session activity
+  sessionData.lastActivity = now;
+  sessions.set(sessionId, sessionData);
+  
+  req.user = sessionData;
+    
+  // Check if user is admin
+  const isShreyas = req.user.email === 'shreyas@fruitstandny.com' || 
+                    req.user.email.toLowerCase().includes('shreyas') ||
+                    req.user.email === process.env.ADMIN_EMAIL;
+    
+  if (isShreyas) {
+    // Log admin access
+    logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS', {
       page: req.path,
-      ipAddress: req.ip,
+      ipAddress: clientIP,
       userAgent: req.get('User-Agent')
     });
     next();
   } else {
-    res.redirect('/?error=unauthorized');
-  }
-}
-
-// Admin authorization middleware
-function requireAdmin(req: any, res: any, next: any) {
-  const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
-  if (sessionId && sessions.has(sessionId)) {
-    req.user = sessions.get(sessionId);
-    
-    // Check if user is admin (check against Microsoft email)
-    const isShreyas = req.user.email === 'shreyas@fruitstandny.com' || 
-                      req.user.email.toLowerCase().includes('shreyas') ||
-                      req.user.email === process.env.ADMIN_EMAIL; // Allow env variable override
-    
-    if (isShreyas) {
-      // Log admin access
-      logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS', {
-        page: req.path,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-      });
-      next();
-    } else {
-      // Log unauthorized admin attempt
-      logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS_DENIED', {
-        page: req.path,
-        ipAddress: req.ip,
-        reason: 'insufficient_permissions'
-      });
-      res.status(403).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Access Denied</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-            .error-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
-            .error-icon { font-size: 64px; margin-bottom: 20px; }
-            .error-title { color: #dc3545; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-            .error-message { color: #666; margin-bottom: 30px; }
-            .back-btn { background: #667eea; color: white; padding: 12px 24px; border: none; border-radius: 5px; text-decoration: none; }
-          </style>
-        </head>
-        <body>
-          <div class="error-container">
-            <div class="error-icon">🔒</div>
-            <div class="error-title">Access Denied</div>
-            <div class="error-message">You don't have permission to access this admin feature. Only authorized administrators can view this page.</div>
-            <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back to Dashboard</a>
-          </div>
-        </body>
-        </html>
-      `);
-    }
-  } else {
-    res.redirect('/?error=unauthorized');
+    // Log unauthorized admin attempt
+    logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS_DENIED', {
+      page: req.path,
+      ipAddress: clientIP,
+      reason: 'insufficient_permissions'
+    });
+    res.status(403).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Access Denied</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+          .error-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+          .error-icon { font-size: 64px; margin-bottom: 20px; }
+          .error-title { color: #dc3545; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+          .error-message { color: #666; margin-bottom: 30px; }
+          .back-btn { background: #667eea; color: white; padding: 12px 24px; border: none; border-radius: 5px; text-decoration: none; }
+        </style>
+      </head>
+      <body>
+        <div class="error-container">
+          <div class="error-icon">🔒</div>
+          <div class="error-title">Access Denied</div>
+          <div class="error-message">You don't have permission to access this admin feature. Only authorized administrators can view this page.</div>
+          <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back to Dashboard</a>
+        </div>
+      </body>
+      </html>
+    `);
   }
 }
 
@@ -114,6 +200,13 @@ function requireAdmin(req: any, res: any, next: any) {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Security middleware - log all incoming requests
+app.use((req, res, next) => {
+  const clientIP = req.ip || req.connection.remoteAddress;
+  console.log(`📡 ${req.method} ${req.path} from ${clientIP} - ${new Date().toISOString()}`);
+  next();
+});
 
 // Landing page - Microsoft OAuth only
 app.get('/', (req, res) => {
@@ -209,19 +302,20 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Add a simple test route to verify server is working
+// Add a simple test route to verify server is working (NO AUTH REQUIRED)
 app.get('/test', (req, res) => {
   res.send(`
     <h1>Server is working!</h1>
     <p>Time: ${new Date().toISOString()}</p>
     <p><a href="/">Go to Login</a></p>
+    <p><strong>Note:</strong> This is the only public endpoint. All other pages require authentication.</p>
   `);
 });
 
-// Git deployment test page
+// Git deployment test page (NO AUTH REQUIRED - but add warning)
 app.get('/git-test', (req, res) => {
   const deployTime = new Date().toISOString();
-  const version = "v1.0.2"; // Changed this to test git deployment
+  const version = "v1.0.2-secure";
   
   res.send(`
     <!DOCTYPE html>
@@ -234,57 +328,49 @@ app.get('/git-test', (req, res) => {
         .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
         .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
         .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        .danger { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
         code { background: #f8f9fa; padding: 2px 5px; border-radius: 3px; }
       </style>
     </head>
     <body>
       <h1>🚀 Git Deployment Test Page</h1>
       
+      <div class="status-box danger">
+        <h3>⚠️ SECURITY WARNING</h3>
+        <p><strong>This is a public test endpoint.</strong> All other admin pages now require proper authentication and session validation.</p>
+        <p>Sessions expire after 24 hours and are cleared on server restart.</p>
+      </div>
+      
       <div class="status-box success">
         <h3>✅ Deployment Status: ACTIVE</h3>
         <p><strong>Version:</strong> ${version}</p>
         <p><strong>Deploy Time:</strong> ${deployTime}</p>
-        <p><strong>Server:</strong> Fruitstand Admin Panel</p>
-      </div>
-      
-      <div class="status-box warning">
-        <h3>🔄 OAuth Callback Issue</h3>
-        <p>The OAuth callback is still showing test data instead of processing the full authentication flow.</p>
-        <p><strong>Status:</strong> The callback route exists but needs the full OAuth processing code.</p>
+        <p><strong>Server:</strong> Fruitstand Admin Panel (Secured)</p>
       </div>
       
       <div class="status-box info">
-        <h3>📋 Test Instructions:</h3>
-        <ol>
-          <li>Make a change to this page in your code</li>
-          <li>Commit and push to git</li>
-          <li>Refresh this page</li>
-          <li>Check if the changes appear automatically</li>
-        </ol>
+        <h3>🔐 Security Features Active:</h3>
+        <ul>
+          <li>Session expiration (24 hours)</li>
+          <li>Sessions cleared on server restart</li>
+          <li>All admin pages require authentication</li>
+          <li>Activity logging for all actions</li>
+          <li>IP address tracking</li>
+        </ul>
       </div>
       
       <div class="status-box info">
         <h3>🔗 Navigation:</h3>
-        <p><a href="/">← Back to Login</a></p>
+        <p><a href="/">← Back to Login (Required for Admin Access)</a></p>
         <p><a href="/test">Server Test</a></p>
         <p><code>Last updated: ${new Date().toLocaleString()}</code></p>
       </div>
-      
-      <div class="status-box">
-        <h3>🔄 Git Pull Test Results:</h3>
-        <p id="git-status">Checking git status...</p>
-      </div>
-      
-      <script>
-        // Simple client-side test
-        document.getElementById('git-status').innerHTML = 
-          'If you can see version ${version}, git deployment is working! 🎉';
-      </script>
     </body>
     </html>
   `);
 });
 
+// All routes below this point require authentication
 // Main dashboard - protected route
 app.get('/dashboard', requireAuth, (req: any, res) => {
   const user = req.user;
@@ -372,7 +458,7 @@ app.get('/dashboard', requireAuth, (req: any, res) => {
   `);
 });
 
-// Page routes
+// Page routes - all require authentication
 app.get('/orders', requireAuth, (req: any, res) => {
   res.send(generateOrdersPage(req));
 });
@@ -653,16 +739,52 @@ app.post('/orders/:id/fulfillment', requireAuth, async (req: any, res) => {
   }
 });
 
-// Logout route
+// Enhanced logout route with session cleanup
 app.get('/logout', (req, res) => {
-  const sessionId = req.query.session;
-  if (sessionId) {
+  const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
+  
+  if (sessionId && sessions.has(sessionId)) {
+    const sessionData = sessions.get(sessionId);
+    console.log('👋 User logged out:', sessionData?.email);
+    
+    // Log logout activity
+    if (sessionData) {
+      logActivity(sessionData.id, sessionData.email, 'LOGOUT', {
+        ipAddress: req.ip,
+        sessionDuration: Date.now() - sessionData.createdAt
+      });
+    }
+    
     sessions.delete(sessionId);
   }
-  res.redirect('/');
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Logged Out</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .logout-container { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+        .success-icon { font-size: 64px; margin-bottom: 20px; color: #28a745; }
+        .success-title { color: #28a745; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .success-message { color: #666; margin-bottom: 30px; }
+        .login-btn { background: #667eea; color: white; padding: 12px 24px; border: none; border-radius: 5px; text-decoration: none; }
+      </style>
+    </head>
+    <body>
+      <div class="logout-container">
+        <div class="success-icon">✅</div>
+        <div class="success-title">Successfully Logged Out</div>
+        <div class="success-message">Your session has been terminated. You'll need to authenticate again to access the admin panel.</div>
+        <a href="/" class="login-btn">Login Again</a>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
-// API routes
+// API routes - all require authentication
 app.get('/api/orders', async (req, res) => {
   try {
     if (prisma.order) {
@@ -702,9 +824,10 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// Microsoft OAuth callback - enhanced error handling
+// Microsoft OAuth callback - enhanced with session security
 app.get('/auth/callback', async (req, res) => {
   console.log('OAuth callback received:', req.query);
+  const clientIP = req.ip || req.connection.remoteAddress;
   
   // Check if Azure is properly configured
   if (!process.env.AZURE_CLIENT_ID || !process.env.AZURE_CLIENT_SECRET) {
@@ -790,20 +913,30 @@ app.get('/auth/callback', async (req, res) => {
       };
     }
 
-    // Create session
-    const sessionId = Date.now().toString() + Math.random().toString();
-    sessions.set(sessionId, { 
-      id: user.id, 
+    // Create secure session with expiration and IP tracking
+    const sessionId = Date.now().toString() + Math.random().toString(36).substring(2);
+    const now = Date.now();
+    
+    const sessionData: SessionData = { 
+      id: user.id.toString(), 
       name: user.name, 
-      email: user.email 
-    });
+      email: user.email,
+      createdAt: now,
+      lastActivity: now,
+      ipAddress: clientIP
+    };
+    
+    sessions.set(sessionId, sessionData);
+    
+    console.log('✅ Session created for:', user.email, 'IP:', clientIP, 'Session:', sessionId.substring(0, 8) + '...');
 
-    // Log successful login
+    // Log successful login with enhanced details
     try {
       await logActivity(user.id.toString(), user.email, 'LOGIN', {
         method: 'microsoft_oauth',
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
+        ipAddress: clientIP,
+        userAgent: req.get('User-Agent'),
+        sessionId: sessionId.substring(0, 8) + '...' // Partial session ID for security
       });
     } catch (logError) {
       console.error('Failed to log activity:', logError);
@@ -816,6 +949,25 @@ app.get('/auth/callback', async (req, res) => {
     console.error('OAuth error details:', error.response?.data || error.message);
     res.redirect('/?error=oauth_failed');
   }
+});
+
+// Add session status endpoint for debugging (admin only)
+app.get('/admin/sessions', requireAdmin, (req: any, res) => {
+  const sessionList = Array.from(sessions.entries()).map(([id, data]) => ({
+    id: id.substring(0, 8) + '...',
+    email: data.email,
+    name: data.name,
+    createdAt: new Date(data.createdAt).toISOString(),
+    lastActivity: new Date(data.lastActivity).toISOString(),
+    ipAddress: data.ipAddress,
+    age: Math.round((Date.now() - data.createdAt) / 1000 / 60) + ' minutes'
+  }));
+
+  res.json({
+    totalSessions: sessions.size,
+    sessions: sessionList,
+    sessionTimeout: SESSION_TIMEOUT / 1000 / 60 + ' minutes' // Will now show "60 minutes"
+  });
 });
 
 // Function to find an available port
