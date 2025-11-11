@@ -20,3 +20,4 @@ git commit -m "chore(security): remove .env from history, add .env.example and i
 
 # Force push with lease to update remote (warn collaborators first)
 git push --force-with-lease
+

@@ -21,7 +21,7 @@ export function registerOrdersRoutes(
   }
 ) {
   const stripe = process.env.STRIPE_SECRET_KEY
-    ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
+    ? new Stripe(process.env.STRIPE_SECRET_KEY, )
     : null;
 
   // Page
@@ -344,7 +344,7 @@ export function registerOrdersRoutes(
       }
       const order = getMockOrder(id);
       order.fulfillment_status = 'fulfilled';
-      order.fulfilled_at = new Date().toISOString();
+      (order as any).fulfilled_at = new Date().toISOString();
       res.json({ ok: true, order, note: 'Mock fulfillment (no persistence)' });
     } catch {
       res.status(500).json({ error: 'Failed to fulfill order' });
