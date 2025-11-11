@@ -1,23 +1,70 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure .env is not tracked anymore
-git rm -f --cached admin-server/.env || true
+echo "==> Purging secrets from history and untracking .env"
 
-# Remove the file from entire history (requires git-filter-repo)
-if ! command -v git-filter-repo >/dev/null 2>&1 && ! command -v git filter-repo >/dev/null 2>&1; then
-  echo "git-filter-repo not found. Install it first:"
-  echo "  pip install git-filter-repo"
+# Current branch
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+REMOTE="${1:-origin}"
+
+# Stop tracking env files that commonly slip in
+git rm -f --cached admin-server/.env 2>/dev/null || true
+git rm -f --cached .env 2>/dev/null || true
+
+# Ensure git-filter-repo is available
+if command -v git-filter-repo >/dev/null 2>&1; then
+  GFR="git-filter-repo"
+elif git help -a | grep -q "filter-repo"; then
+  GFR="git filter-repo"
+else
+  echo "ERROR: git-filter-repo not found."
+  echo "Install via: pip install git-filter-repo"
   exit 1
 fi
 
-# Run filter-repo (works whether command is git-filter-repo or git filter-repo)
-git filter-repo --path admin-server/.env --invert-paths
+# Build a temporary replace-text rules file
+TMP_RULES="$(mktemp)"
+cat > "$TMP_RULES" <<'RULES'
+# Replace known variable-based secrets by key
+regex:^STRIPE_SECRET_KEY=.*==>STRIPE_SECRET_KEY=<redacted>
+regex:^STRIPE_WEBHOOK_SECRET=.*==>STRIPE_WEBHOOK_SECRET=<redacted>
+regex:^AZURE_CLIENT_SECRET=.*==>AZURE_CLIENT_SECRET=<redacted>
+regex:^SUPABASE_SERVICE_ROLE_KEY=.*==>SUPABASE_SERVICE_ROLE_KEY=<redacted>
+# Replace raw secret-looking tokens that may appear outside env files
+regex:sk_live_[0-9A-Za-z]+==><redacted>
+regex:sk_test_[0-9A-Za-z]+==><redacted>
+regex:whsec_[0-9A-Za-z]+==><redacted>
+RULES
 
-# Commit ignore and example env if needed
+# Rewrite history: remove specific file and scrub secrets everywhere
+# Note: run both path removal and replace-text in a single pass
+$GFR --force \
+  --path admin-server/.env --invert-paths \
+  --replace-text "$TMP_RULES"
+
+rm -f "$TMP_RULES" || true
+
+# Prune backup refs created by filter-repo (refs/original) and GC
+echo "==> Cleaning backup refs and running GC"
+git for-each-ref --format='%(refname)' refs/original/ | xargs -r -n 1 git update-ref -d
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive || true
+
+# Stage any ignore/template changes the repo might have (if you added them)
 git add -A
-git commit -m "chore(security): remove .env from history, add .env.example and ignore .env" || true
+git commit -m "chore(security): purge secrets from history and stop tracking env files" || true
 
-# Force push with lease to update remote (warn collaborators first)
-git push --force-with-lease
+echo "==> Force pushing rewritten history to $REMOTE/$BRANCH"
+git push "$REMOTE" "$BRANCH" --force-with-lease
+
+cat <<'NEXT'
+Done.
+
+Important next steps:
+- Rotate any exposed secrets in their providers (Stripe Dashboard, Azure App Registration, Supabase).
+- Ensure admin-server/.env is git-ignored and never committed.
+- If collaborators pulled the old history, they must run:
+    git fetch --all
+    git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)
+NEXT
 
