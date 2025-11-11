@@ -1,3 +1,9 @@
+export function registerInventoryRoutes(app: any, { requireAuth }: any) {
+  app.get('/inventory', requireAuth, (req: any, res: any) => {
+    res.send(generateInventoryPage(req));
+  });
+}
+
 export function generateInventoryPage(req: any) {
   return `
     <!DOCTYPE html>

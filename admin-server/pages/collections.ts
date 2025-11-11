@@ -24,3 +24,9 @@ export function generateCollectionsPage(req: any) {
     </html>
   `;
 }
+
+export function registerCollectionsRoutes(app: any, { requireAuth }: any) {
+  app.get('/collections', requireAuth, (req: any, res: any) => {
+    res.send(generateCollectionsPage(req));
+  });
+}

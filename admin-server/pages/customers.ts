@@ -24,3 +24,9 @@ export function generateCustomersPage(req: any) {
     </html>
   `;
 }
+
+export function registerCustomersRoutes(app: any, { requireAuth }: any) {
+  app.get('/customers', requireAuth, (req: any, res: any) => {
+    res.send(generateCustomersPage(req));
+  });
+}

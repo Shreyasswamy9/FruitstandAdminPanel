@@ -24,3 +24,9 @@ export function generateReviewsPage(req: any) {
     </html>
   `;
 }
+
+export function registerReviewsRoutes(app: any, { requireAuth }: any) {
+  app.get('/reviews', requireAuth, (req: any, res: any) => {
+    res.send(generateReviewsPage(req));
+  });
+}

@@ -1,3 +1,16 @@
+export function registerActivityRoutes(app: any, { prisma, logActivity, requireAdmin }: any) {
+  app.get('/activity', requireAdmin, async (req: any, res: any) => {
+    const model = (prisma as any).activityLog;
+    const activities = model ? await model.findMany({ orderBy: { timestamp: 'desc' }, take: 500 }) : [];
+    res.send(generateActivityPage(req, activities));
+  });
+
+  app.get('/admin/sessions', requireAdmin, (req: any, res: any) => {
+    // This endpoint moved from server.ts to keep admin tooling with activity
+    res.json({ message: 'Implement session listing here if needed.' });
+  });
+}
+
 export function generateActivityPage(req: any, activities: any[]) {
   return `
     <!DOCTYPE html>
@@ -89,8 +102,15 @@ export function generateActivityPage(req: any, activities: any[]) {
             </thead>
             <tbody id="activityTableBody">
               ${activities.map(activity => {
-                const details = JSON.parse(activity.details || '{}');
-                const actionClass = activity.action.toLowerCase().replace('_', '-');
+                let details: any = {};
+                try {
+                  details = typeof activity.details === 'string'
+                    ? JSON.parse(activity.details || '{}')
+                    : (activity.details || {});
+                } catch (e) {
+                  details = {};
+                }
+                const actionClass = activity.action.toLowerCase().replace(/_/g, '-');
                 return `
                   <tr class="activity-row" data-user="${activity.userEmail}" data-action="${activity.action}" data-date="${new Date(activity.timestamp).toISOString().split('T')[0]}">
                     <td class="timestamp">${new Date(activity.timestamp).toLocaleString()}</td>

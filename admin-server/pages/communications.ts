@@ -24,3 +24,9 @@ export function generateCommunicationsPage(req: any) {
     </html>
   `;
 }
+
+export function registerCommunicationsRoutes(app: any, { requireAuth }: any) {
+  app.get('/communications', requireAuth, (req: any, res: any) => {
+    res.send(generateCommunicationsPage(req));
+  });
+}

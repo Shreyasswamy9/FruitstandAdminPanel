@@ -1,4 +1,128 @@
+import axios from 'axios';
+
+export function registerAnalyticsRoutes(app: any, { requireAuth }: any) {
+  // Page
+  app.get('/analytics', requireAuth, (req: any, res: any) => {
+    res.send(generateAnalyticsPage(req));
+  });
+
+  // GTM status (env-only)
+  app.get('/api/analytics/gtm', requireAuth, async (_req: any, res: any) => {
+    try {
+      const containerId = process.env.GTM_CONTAINER_ID || null;
+      const status = containerId ? 'active' : 'inactive';
+      // Optional TODO: call GTM API if you add OAuth credentials
+      res.json({
+        status,
+        containerId,
+        sessions7d: null,
+        pageViews: null,
+        events: null,
+        conversionRate: null
+      });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to fetch GTM status' });
+    }
+  });
+
+  // Meta Pixel basic info + rough event stats (best-effort)
+  app.get('/api/analytics/meta', requireAuth, async (_req: any, res: any) => {
+    const pixelId = process.env.META_PIXEL_ID;
+    const token = process.env.META_ACCESS_TOKEN;
+    if (!pixelId || !token) {
+      return res.json({
+        status: 'inactive',
+        pixelId: pixelId || null,
+        name: null,
+        events24h: null,
+        pageviews24h: null,
+        addToCart24h: null,
+        purchases24h: null,
+        revenue24h: null
+      });
+    }
+    try {
+      // Basic pixel info
+      const info = await axios.get(`https://graph.facebook.com/v18.0/${encodeURIComponent(pixelId)}`, {
+        params: { fields: 'id,name,creation_time', access_token: token }
+      });
+
+      // Best-effort stats (endpoint availability depends on Ad account setup)
+      let events24h = null;
+      let pageviews24h = null;
+      let purchases24h = null;
+      let addToCart24h = null;
+      let revenue24h = null;
+
+      try {
+        const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+        const until = Math.floor(Date.now() / 1000);
+        // Not all apps have access to stats; catch and ignore failures gracefully.
+        const statsResp = await axios.get(`https://graph.facebook.com/v18.0/${encodeURIComponent(pixelId)}/stats`, {
+          params: {
+            aggregateBy: 'event',
+            since,
+            until,
+            access_token: token
+          }
+        });
+        const rows = Array.isArray(statsResp.data?.data) ? statsResp.data.data : [];
+        const findCount = (eventName: string) => {
+          const row = rows.find((r: any) => r?.event === eventName);
+          return (row && typeof row?.count === 'number') ? row.count : null;
+        };
+        events24h = rows.reduce((sum: number, r: any) => sum + (Number(r?.count) || 0), 0) || null;
+        pageviews24h = findCount('PageView');
+        addToCart24h = findCount('AddToCart');
+        purchases24h = findCount('Purchase');
+        // Revenue may not be exposed here; leave null unless you map custom metrics.
+        revenue24h = null;
+      } catch {
+        // Ignore if not permitted; keep nulls
+      }
+
+      res.json({
+        status: 'active',
+        pixelId: info.data?.id || pixelId,
+        name: info.data?.name || null,
+        events24h,
+        pageviews24h,
+        addToCart24h,
+        purchases24h,
+        revenue24h
+      });
+    } catch (e) {
+      res.json({
+        status: 'inactive',
+        pixelId: pixelId,
+        name: null,
+        events24h: null,
+        pageviews24h: null,
+        addToCart24h: null,
+        purchases24h: null,
+        revenue24h: null
+      });
+    }
+  });
+
+  // TikTok Pixel status (env-only, best-effort)
+  app.get('/api/analytics/tiktok', requireAuth, async (_req: any, res: any) => {
+    const pixelId = process.env.TIKTOK_PIXEL_ID || null;
+    const token = process.env.TIKTOK_ACCESS_TOKEN || null;
+    // Optional TODO: Call TikTok Business API if token is available
+    res.json({
+      status: pixelId ? 'active' : 'inactive',
+      pixelId,
+      events24h: null,
+      pageviews24h: null,
+      addToCart24h: null,
+      purchases24h: null
+    });
+  });
+}
+
 export function generateAnalyticsPage(req: any) {
+  const sessionSuffix = req?.query?.session ? `?session=${encodeURIComponent(String(req.query.session))}` : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -28,20 +152,21 @@ export function generateAnalyticsPage(req: any) {
         .conversion-table { width: 100%; margin-top: 15px; }
         .conversion-table th, .conversion-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
         .conversion-table th { background: #f8f9fa; font-weight: bold; }
+        .muted { color: #6c757d; font-size: 12px; }
       </style>
     </head>
     <body>
       <div class="header">
         <h1>📈 Analytics Dashboard</h1>
         <div>
-          <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back to Dashboard</a>
+          <a href="/dashboard${sessionSuffix}" class="back-btn">Back to Dashboard</a>
           <button class="refresh-btn" onclick="refreshData()">Refresh Data</button>
         </div>
       </div>
       
       <div class="main-content">
         <!-- Loading overlay -->
-        <div id="loading" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; color: white;">
+        <div id="loading" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; color: white;">
           <div>Loading analytics data...</div>
         </div>
 
@@ -58,19 +183,19 @@ export function generateAnalyticsPage(req: any) {
             </div>
             <div class="metric">
               <span class="metric-label">Sessions (Last 7 days):</span>
-              <span class="metric-value" id="gtm-sessions">Loading...</span>
+              <span class="metric-value muted" id="gtm-sessions">N/A</span>
             </div>
             <div class="metric">
               <span class="metric-label">Page Views:</span>
-              <span class="metric-value" id="gtm-pageviews">Loading...</span>
+              <span class="metric-value muted" id="gtm-pageviews">N/A</span>
             </div>
             <div class="metric">
               <span class="metric-label">Events Fired:</span>
-              <span class="metric-value" id="gtm-events">Loading...</span>
+              <span class="metric-value muted" id="gtm-events">N/A</span>
             </div>
             <div class="metric">
               <span class="metric-label">Conversion Rate:</span>
-              <span class="metric-value" id="gtm-conversion">Loading...</span>
+              <span class="metric-value muted" id="gtm-conversion">N/A</span>
             </div>
           </div>
 
@@ -115,21 +240,22 @@ export function generateAnalyticsPage(req: any) {
             <div class="metric">
               <span class="metric-label">Pixel ID:</span>
               <span class="metric-value" id="tiktok-pixel-id">Loading...</span>
-            </
-              <span class="metric-label">Open Graph Tags:</span>
-              <span class="metric-value">Complete ✓</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Twitter Cards:</span>
-              <span class="metric-value">Configured ✓</span>
+              <span class="metric-label">Events (24h):</span>
+              <span class="metric-value" id="tiktok-events">N/A</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Schema Markup:</span>
-              <span class="metric-value">Product + Organization</span>
+              <span class="metric-label">Page Views:</span>
+              <span class="metric-value" id="tiktok-pageviews">N/A</span>
             </div>
             <div class="metric">
-              <span class="metric-label">Page Speed Score:</span>
-              <span class="metric-value">89/100 <span class="metric-change positive">Good</span></span>
+              <span class="metric-label">Add to Cart:</span>
+              <span class="metric-value" id="tiktok-addtocart">N/A</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Purchase Events:</span>
+              <span class="metric-value" id="tiktok-purchases">N/A</span>
             </div>
           </div>
 
@@ -147,106 +273,105 @@ export function generateAnalyticsPage(req: any) {
                   <th>Total</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr>
-                  <td>Page View</td>
-                  <td>8,634</td>
-                  <td>856</td>
-                  <td>9,490</td>
-                </tr>
-                <tr>
-                  <td>Add to Cart</td>
-                  <td>342</td>
-                  <td>127</td>
-                  <td>469</td>
-                </tr>
-                <tr>
-                  <td>Begin Checkout</td>
-                  <td>89</td>
-                  <td>34</td>
-                  <td>123</td>
-                </tr>
-                <tr>
-                  <td>Purchase</td>
-                  <td>67</td>
-                  <td>23</td>
-                  <td>90</td>
-                </tr>
+              <tbody id="conv-table">
+                <tr><td colspan="4" class="muted">Live totals update with Meta data when available.</td></tr>
               </tbody>
             </table>
           </div>
 
-          <!-- Third-party Integrations Card -->
+          <!-- Active Integrations Card -->
           <div class="analytics-card">
             <div class="card-title">
               🔌 Active Integrations
             </div>
             <ul class="integration-list">
               <li>
-                Google Analytics 4
-                <span class="pixel-status active">Active</span>
+                Google Tag Manager
+                <span class="pixel-status" id="gtm-active-pill">Checking...</span>
               </li>
               <li>
                 Facebook Pixel
-                <span class="pixel-status active">Active</span>
-              </li>
-              <li>
-                Google Tag Manager
-                <span class="pixel-status active">Active</span>
-              </li>
-              <li>
-                Hotjar Heatmaps
-                <span class="pixel-status active">Active</span>
+                <span class="pixel-status" id="meta-active-pill">Checking...</span>
               </li>
               <li>
                 TikTok Pixel
-                <span class="pixel-status inactive">Inactive</span>
-              </li>
-              <li>
-                Pinterest Tag
-                <span class="pixel-status inactive">Inactive</span>
+                <span class="pixel-status" id="tiktok-active-pill">Checking...</span>
               </li>
             </ul>
-          </div>
-
-          <!-- Real-time Data Card -->
-          <div class="analytics-card">
-            <div class="card-title">
-              ⚡ Real-time Data
-            </div>
-            <div class="metric">
-              <span class="metric-label">Active Users Now:</span>
-              <span class="metric-value">27</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Top Source:</span>
-              <span class="metric-value">Organic Search (45%)</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Top Page:</span>
-              <span class="metric-value">/products/summer-collection</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Conversions Today:</span>
-              <span class="metric-value">12 purchases</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Revenue Today:</span>
-              <span class="metric-value">$1,456.89</span>
-            </div>
+            <div class="muted">Configure .env: GTM_CONTAINER_ID, META_PIXEL_ID, META_ACCESS_TOKEN, TIKTOK_PIXEL_ID, TIKTOK_ACCESS_TOKEN</div>
           </div>
         </div>
       </div>
       
       <script>
-        function refreshData() {
-          // Simulate data refresh
-          alert('Refreshing analytics data... This would fetch latest data from Google Analytics and Facebook Pixel APIs.');
-          // In a real implementation, this would make API calls to:
-          // - Google Analytics Reporting API
-          // - Facebook Marketing API
-          // - Your own tracking endpoints
+        function setStatus(elId, status) {
+          const el = document.getElementById(elId);
+          if (!el) return;
+          el.textContent = status === 'active' ? 'Active' : 'Inactive';
+          el.classList.remove('active', 'inactive');
+          el.classList.add(status === 'active' ? 'active' : 'inactive');
         }
+
+        async function refreshData() {
+          document.getElementById('loading').style.display = 'flex';
+          try {
+            await Promise.all([loadGTM(), loadMeta(), loadTikTok()]);
+          } finally {
+            document.getElementById('loading').style.display = 'none';
+          }
+        }
+
+        async function loadGTM() {
+          const r = await fetch('/api/analytics/gtm${sessionSuffix}');
+          const d = await r.json();
+          setStatus('gtm-status', d.status);
+          setStatus('gtm-active-pill', d.status);
+          document.getElementById('gtm-container').textContent = d.containerId || 'Not configured';
+          document.getElementById('gtm-sessions').textContent = d.sessions7d ?? 'N/A';
+          document.getElementById('gtm-pageviews').textContent = d.pageViews ?? 'N/A';
+          document.getElementById('gtm-events').textContent = d.events ?? 'N/A';
+          document.getElementById('gtm-conversion').textContent = d.conversionRate ?? 'N/A';
+        }
+
+        async function loadMeta() {
+          try {
+            const r = await fetch('/api/analytics/meta${sessionSuffix}');
+            const d = await r.json();
+            setStatus('meta-status', d.status);
+            setStatus('meta-active-pill', d.status);
+            document.getElementById('meta-pixel-id').textContent = d.pixelId || 'Not configured';
+            document.getElementById('meta-events').textContent = d.events24h ?? 'N/A';
+            document.getElementById('meta-pageviews').textContent = d.pageviews24h ?? 'N/A';
+            document.getElementById('meta-addtocart').textContent = d.addToCart24h ?? 'N/A';
+            document.getElementById('meta-purchases').textContent = d.purchases24h ?? 'N/A';
+            document.getElementById('meta-revenue').textContent = d.revenue24h ?? 'N/A';
+
+            // Update simple conversion table using Meta only (if present)
+            const conv = document.getElementById('conv-table');
+            const ga4 = 'N/A';
+            const fbPV = d.pageviews24h ?? 0;
+            const fbATC = d.addToCart24h ?? 0;
+            const fbPUR = d.purchases24h ?? 0;
+            conv.innerHTML =
+              '<tr><td>Page View</td><td>' + ga4 + '</td><td>' + fbPV + '</td><td>' + (ga4 === 'N/A' ? fbPV : '—') + '</td></tr>' +
+              '<tr><td>Add to Cart</td><td>' + ga4 + '</td><td>' + fbATC + '</td><td>' + (ga4 === 'N/A' ? fbATC : '—') + '</td></tr>' +
+              '<tr><td>Purchase</td><td>' + ga4 + '</td><td>' + fbPUR + '</td><td>' + (ga4 === 'N/A' ? fbPUR : '—') + '</td></tr>';
+          } catch (e) {
+            // Keep defaults
+          }
+        }
+
+        async function loadTikTok() {
+          const r = await fetch('/api/analytics/tiktok${sessionSuffix}');
+          const d = await r.json();
+          setStatus('tiktok-status', d.status);
+          setStatus('tiktok-active-pill', d.status);
+          document.getElementById('tiktok-pixel-id').textContent = d.pixelId || 'Not configured';
+          // Metrics remain N/A unless you wire TikTok Business API with access token
+        }
+
+        // Initial load
+        refreshData();
       </script>
     </body>
     </html>
