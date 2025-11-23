@@ -15,6 +15,7 @@ import { registerInventoryRoutes } from './pages/inventory';
 import { registerCustomersRoutes } from './pages/customers';
 import { registerCollectionsRoutes } from './pages/collections';
 import { registerReviewsRoutes } from './pages/reviews';
+import { registerTicketsRoutes } from './pages/tickets';
 
 dotenv.config();
 
@@ -37,15 +38,15 @@ async function logActivity(userId: string, userEmail: string, action: string, de
       await activityModel.create({
         data: {
           userId,
-            userEmail,
-            action,
-            details: JSON.stringify(details),
-            timestamp: new Date(),
-            ipAddress: details.ipAddress || 'unknown'
+          userEmail,
+          action,
+          details: JSON.stringify(details),
+          timestamp: new Date(),
+          ipAddress: details.ipAddress || 'unknown'
         }
       });
     }
-  } catch {}
+  } catch { }
 }
 
 // Auth middlewares (shared)
@@ -122,14 +123,14 @@ app.get('/auth/callback', async (req: any, res: any) => {
     const email = ms.mail || ms.userPrincipalName;
     let user = { id: ms.id, name: ms.displayName, email };
     try {
-      if ((prisma as any).user) {
-        user = await (prisma as any).user.upsert({
+      if ((prisma as any).users) {
+        user = await (prisma as any).users.upsert({
           where: { email },
           update: { name: ms.displayName },
           create: { email, name: ms.displayName, password: 'oauth' }
         });
       }
-    } catch {}
+    } catch { }
     const sessionId = Date.now() + Math.random().toString(36).slice(2);
     sessions.set(sessionId, { id: user.id.toString(), name: user.name, email: user.email, createdAt: Date.now(), lastActivity: Date.now(), ipAddress: req.ip });
     logActivity(user.id.toString(), email, 'LOGIN', { method: 'microsoft_oauth', ipAddress: req.ip });
@@ -202,6 +203,7 @@ app.get('/dashboard', requireAuth, (req: any, res: any) => {
       <a class="card" href="/collections${s}"><div class="icon">🎨</div><div class="title">Collections</div><div class="desc">Seasonal</div></a>
       <a class="card" href="/inventory${s}"><div class="icon">📊</div><div class="title">Inventory</div><div class="desc">Stock</div></a>
       <a class="card" href="/reviews${s}"><div class="icon">⭐</div><div class="title">Reviews</div><div class="desc">Feedback</div></a>
+      <a class="card" href="/tickets${s}"><div class="icon">🎫</div><div class="title">Tickets</div><div class="desc">Support</div></a>
       ${isAdmin ? `<a class="card" href="/activity${s}"><div class="icon">🛡️</div><div class="title">Activity</div><div class="desc">Audit log</div></a>` : ''}
     </div>
     <script>
@@ -216,7 +218,7 @@ app.get('/dashboard', requireAuth, (req: any, res: any) => {
 
 // Logout
 app.get('/logout', (req: any, res: any) => {
-  const sid = req.headers.authorization?.replace('Bearer ','') || req.query.session;
+  const sid = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
   if (sid && sessions.has(sid)) {
     const u = sessions.get(sid)!;
     logActivity(u.id, u.email, 'LOGOUT', { ipAddress: req.ip, duration: Date.now() - u.createdAt });
@@ -226,25 +228,7 @@ app.get('/logout', (req: any, res: any) => {
 });
 
 // Delegate page-specific routes
-registerOrdersRoutes(app, {
-  requireAuth,
-  dataProvider: {
-    getOrderById: async (id: string) => {
-      try {
-        return await (prisma as any).order.findUnique({ where: { id } });
-      } catch {
-        return null;
-      }
-    },
-    fulfillOrder: async (id: string) => {
-      try {
-        return await (prisma as any).order.update({ where: { id }, data: { status: 'fulfilled' } });
-      } catch {
-        return null;
-      }
-    }
-  }
-});
+registerOrdersRoutes(app, { requireAuth, prisma, logActivity });
 registerProductsRoutes(app, { prisma, logActivity, requireAuth, requireAdmin });
 registerAnalyticsRoutes(app, { requireAuth });
 registerCommunicationsRoutes(app, { requireAuth });
@@ -252,7 +236,8 @@ registerActivityRoutes(app, { prisma, logActivity, requireAdmin });
 registerInventoryRoutes(app, { requireAuth });
 registerCustomersRoutes(app, { requireAuth });
 registerCollectionsRoutes(app, { requireAuth });
-registerReviewsRoutes(app, { requireAuth });
+registerReviewsRoutes(app, { prisma, logActivity, requireAuth });
+registerTicketsRoutes(app, { prisma, logActivity, requireAuth });
 
 // Port
 function findAvailablePort(startPort = 3000): Promise<number> {

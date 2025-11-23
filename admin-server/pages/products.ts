@@ -1,176 +1,415 @@
-import express from 'express';
+import { Decimal } from '@prisma/client/runtime/library';
 
-export function registerProductsRoutes(app: any, { prisma, logActivity, requireAuth }: any) {
-  app.get('/products', requireAuth, async (req: any, res: any) => {
-    const products = prisma.product ? await prisma.product.findMany({ orderBy: { createdAt: 'desc' } }) : [];
-    res.send(generateProductsPage(req, products));
+export function registerProductsRoutes(
+  app: any,
+  { prisma, logActivity, requireAuth, requireAdmin }: any
+) {
+  // Page: Products List
+  app.get('/products', requireAuth, (req: any, res: any) => {
+    res.send(generateProductsPage(req));
   });
 
-  app.post('/products/create', requireAuth, async (req: any, res: any) => {
-    const { name, description, price, category, inStock } = req.body;
-    if (prisma.product) {
+  // Page: Create/Edit Product
+  app.get('/products/new', requireAdmin, (req: any, res: any) => {
+    res.send(generateProductFormPage(req, null));
+  });
+
+  app.get('/products/:id', requireAdmin, async (req: any, res: any) => {
+    try {
+      const id = req.params.id;
+      const product = await prisma.product.findUnique({
+        where: { id },
+        include: { categories: true, product_variants: true }
+      });
+      if (!product) return res.redirect('/products?error=Product+not+found');
+      res.send(generateProductFormPage(req, product));
+    } catch (e) {
+      console.error(e);
+      res.redirect('/products?error=Failed+to+load+product');
+    }
+  });
+
+  // API: Get Products
+  app.get('/api/products', requireAuth, async (req: any, res: any) => {
+    try {
+      const products = await prisma.product.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { categories: true }
+      });
+      // Serialize Decimals
+      const serialized = products.map((p: any) => ({
+        ...p,
+        price: Number(p.price),
+        category: p.categories?.name || 'Uncategorized'
+      }));
+      res.json(serialized);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: 'Failed to fetch products' });
+    }
+  });
+
+  // API: Create Product
+  app.post('/api/products', requireAdmin, async (req: any, res: any) => {
+    try {
+      const { name, price, description, category, inventoryQuantity, sizes, colors, images } = req.body;
+
+      // Handle Category (Upsert)
+      let categoryId = null;
+      if (category) {
+        const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const cat = await prisma.categories.upsert({
+          where: { slug },
+          update: {},
+          create: { name: category, slug }
+        });
+        categoryId = cat.id;
+      }
+
+      // Generate Slug
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString().slice(-4);
+      const imageUrl = images ? images.split(',')[0].trim() : '';
+
       const product = await prisma.product.create({
         data: {
           name,
-          description: description || null,
-          price: parseFloat(price),
-          category,
-          inStock: inStock === 'true'
+          slug,
+          price: Number(price),
+          description,
+          category_id: categoryId,
+          stock_quantity: Number(inventoryQuantity || 0),
+          is_active: true,
+          image_url: imageUrl,
+          // Create variants if sizes/colors provided
+          product_variants: {
+            create: generateVariants(sizes, colors, Number(price))
+          }
         }
       });
-      logActivity(req.user.id, req.user.email, 'PRODUCT_CREATE', { productId: product.id, name, price: parseFloat(price) });
+
+      logActivity(req.user.id, req.user.email, 'PRODUCT_CREATE', { productId: product.id, name });
+      res.json({ ok: true, id: product.id });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: 'Failed to create product' });
     }
-    res.redirect(`/products${req.query.session ? `?session=${req.query.session}` : ''}`);
   });
 
-  app.post('/products/:id/delete', requireAuth, async (req: any, res: any) => {
-    const { id } = req.params;
-    if (prisma.product) {
-      const p = await prisma.product.findUnique({ where: { id } });
-      await prisma.product.delete({ where: { id } });
-      logActivity(req.user.id, req.user.email, 'PRODUCT_DELETE', { productId: id, productName: p?.name });
+  // API: Update Product
+  app.put('/api/products/:id', requireAdmin, async (req: any, res: any) => {
+    try {
+      const { name, price, description, category, inventoryQuantity, sizes, colors, images, active } = req.body;
+
+      // Handle Category
+      let categoryId = null;
+      if (category) {
+        const slug = category.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const cat = await prisma.categories.upsert({
+          where: { slug },
+          update: {},
+          create: { name: category, slug }
+        });
+        categoryId = cat.id;
+      }
+
+      const imageUrl = images ? images.split(',')[0].trim() : '';
+
+      // Update Product
+      const product = await prisma.product.update({
+        where: { id: req.params.id },
+        data: {
+          name,
+          price: Number(price),
+          description,
+          category_id: categoryId,
+          stock_quantity: Number(inventoryQuantity || 0),
+          is_active: active === 'true' || active === true,
+          image_url: imageUrl
+        }
+      });
+
+      // Re-create variants (simplistic approach: delete all and recreate)
+      // In a real app, we would update existing ones, but this is an admin panel MVP
+      await prisma.product_variants.deleteMany({ where: { product_id: product.id } });
+      const variants = generateVariants(sizes, colors, Number(price));
+      if (variants.length > 0) {
+        for (const v of variants) {
+          await prisma.product_variants.create({
+            data: { ...v, product_id: product.id }
+          });
+        }
+      }
+
+      logActivity(req.user.id, req.user.email, 'PRODUCT_UPDATE', { productId: product.id });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: 'Failed to update product' });
     }
-    res.json({ success: true });
   });
 
-  app.get('/api/products', requireAuth, async (_req: any, res: any) => {
-    if (!prisma.product) return res.status(503).json({ error: 'DB not ready' });
-    const products = await prisma.product.findMany();
-    res.json(products);
+  // API: Delete Product
+  app.delete('/api/products/:id', requireAdmin, async (req: any, res: any) => {
+    try {
+      await prisma.product.delete({ where: { id: req.params.id } });
+      logActivity(req.user.id, req.user.email, 'PRODUCT_DELETE', { productId: req.params.id });
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: 'Failed to delete product' });
+    }
   });
 }
 
-export function generateProductsPage(req: any, products: any[]) {
+function generateVariants(sizesStr: string, colorsStr: string, price: number) {
+  const sizes = sizesStr ? sizesStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const colors = colorsStr ? colorsStr.split(',').map(c => c.trim()).filter(Boolean) : [];
+  const variants: any[] = [];
+
+  if (sizes.length > 0 && colors.length > 0) {
+    for (const size of sizes) {
+      for (const color of colors) {
+        variants.push({
+          size,
+          color,
+          sku: `${size}-${color}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          stock_quantity: 0, // Default
+          price_adjustment: 0
+        });
+      }
+    }
+  } else if (sizes.length > 0) {
+    for (const size of sizes) {
+      variants.push({
+        size,
+        sku: `${size}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        stock_quantity: 0,
+        price_adjustment: 0
+      });
+    }
+  } else if (colors.length > 0) {
+    for (const color of colors) {
+      variants.push({
+        color,
+        sku: `${color}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        stock_quantity: 0,
+        price_adjustment: 0
+      });
+    }
+  }
+  return variants;
+}
+
+function generateProductsPage(req: any) {
   return `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Product Management</title>
+      <title>Products</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
         .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main-content { padding: 30px; max-width: 1400px; margin: 0 auto; }
-        .back-btn, .add-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; margin-right: 10px; }
-        .add-btn { background: #28a745; }
-        .products-container { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 5px 15px rgba(0,0,0,0.1); margin-top: 20px; }
-        .products-table { width: 100%; }
-        .products-table th, .products-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
-        .products-table th { background: #f8f9fa; font-weight: bold; }
-        .product-form { background: white; padding: 20px; margin-bottom: 20px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
-        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        .form-group textarea { height: 80px; resize: vertical; }
-        .form-actions { display: flex; gap: 10px; }
-        .action-btn { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
-        .edit-btn { background: #007bff; color: white; }
-        .delete-btn { background: #dc3545; color: white; }
-        .in-stock { color: #28a745; font-weight: bold; }
-        .out-of-stock { color: #dc3545; font-weight: bold; }
+        .main { padding: 30px; max-width: 1200px; margin: 0 auto; }
+        .btn { background: #4299e1; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; cursor: pointer; }
+        .btn-new { background: #48bb78; }
+        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; }
+        tr:hover { background: #f8f9fa; cursor: pointer; }
+        .img-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background: #eee; }
       </style>
     </head>
     <body>
       <div class="header">
-        <h1>👕 Product Management</h1>
+        <h1>👕 Products</h1>
         <div>
-          <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back to Dashboard</a>
-          <button class="add-btn" onclick="toggleProductForm()">Add New Product</button>
+          <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="btn" style="background:#6c757d;margin-right:10px">Back</a>
+          <a href="/products/new${req.query.session ? `?session=${req.query.session}` : ''}" class="btn btn-new">New Product</a>
         </div>
       </div>
-      
-      <div class="main-content">
-        <!-- Add Product Form -->
-        <div id="productForm" class="product-form" style="display: none;">
-          <h3>Add New Product</h3>
-          <form action="/products/create${req.query.session ? `?session=${req.query.session}` : ''}" method="POST">
-            <div class="form-group">
-              <label for="name">Product Name:</label>
-              <input type="text" id="name" name="name" required>
-            </div>
-            <div class="form-group">
-              <label for="description">Description:</label>
-              <textarea id="description" name="description" placeholder="Product description..."></textarea>
-            </div>
-            <div class="form-group">
-              <label for="price">Price ($):</label>
-              <input type="number" step="0.01" id="price" name="price" required>
-            </div>
-            <div class="form-group">
-              <label for="category">Category:</label>
-              <select id="category" name="category" required>
-                <option value="">Select Category</option>
-                <option value="shirts">Shirts</option>
-                <option value="pants">Pants</option>
-                <option value="dresses">Dresses</option>
-                <option value="jackets">Jackets</option>
-                <option value="shoes">Shoes</option>
-                <option value="accessories">Accessories</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="inStock">In Stock:</label>
-              <select id="inStock" name="inStock">
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="add-btn">Create Product</button>
-              <button type="button" onclick="toggleProductForm()" class="back-btn">Cancel</button>
-            </div>
-          </form>
-        </div>
-
-        <div class="products-container">
-          <table class="products-table">
+      <div class="main">
+        <div class="card">
+          <table>
             <thead>
               <tr>
-                <th>Product Name</th>
-                <th>Description</th>
-                <th>Price</th>
+                <th width="60">Img</th>
+                <th>Name</th>
                 <th>Category</th>
-                <th>Stock Status</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th>Price</th>
+                <th>Stock</th>
+                <th>Status</th>
               </tr>
             </thead>
-            <tbody>
-              ${products.map(product => `
-                <tr>
-                  <td><strong>${product.name}</strong></td>
-                  <td>${product.description || 'No description'}</td>
-                  <td>$${product.price.toFixed(2)}</td>
-                  <td>${product.category}</td>
-                  <td><span class="${product.inStock ? 'in-stock' : 'out-of-stock'}">${product.inStock ? 'In Stock' : 'Out of Stock'}</span></td>
-                  <td>${new Date(product.createdAt).toLocaleDateString()}</td>
-                  <td>
-                    <button class="action-btn edit-btn" onclick="editProduct('${product.id}')">Edit</button>
-                    <button class="action-btn delete-btn" onclick="deleteProduct('${product.id}')">Delete</button>
-                  </td>
-                </tr>
-              `).join('')}
-              ${products.length === 0 ? '<tr><td colspan="7" style="text-align: center; padding: 30px;">No products found. Add your first product!</td></tr>' : ''}
+            <tbody id="prod-body">
+              <tr><td colspan="6" style="text-align:center">Loading...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
-      
       <script>
-        function toggleProductForm() {
-          const form = document.getElementById('productForm');
-          form.style.display = form.style.display === 'none' ? 'block' : 'none';
-        }
-        
-        function editProduct(productId) {
-          alert('Edit product: ' + productId + ' - This would open an edit form');
-        }
-        
-        function deleteProduct(productId) {
-          if (confirm('Are you sure you want to delete this product?')) {
-            fetch('/products/' + productId + '/delete${req.query.session ? `?session=${req.query.session}` : ''}', {
-              method: 'POST'
-            }).then(() => location.reload());
+        const session = '${req.query.session ? `?session=${req.query.session}` : ''}';
+        fetch('/api/products' + session)
+          .then(r => r.json())
+          .then(products => {
+            const tbody = document.getElementById('prod-body');
+            if (!products.length) {
+              tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No products found</td></tr>';
+              return;
+            }
+            tbody.innerHTML = products.map(p => \`
+              <tr onclick="location.href='/products/\${p.id}' + session">
+                <td><img src="\${p.image_url || ''}" class="img-thumb" onerror="this.style.display='none'"></td>
+                <td><strong>\${p.name}</strong></td>
+                <td>\${p.category}</td>
+                <td>$\${p.price.toFixed(2)}</td>
+                <td>\${p.stock_quantity || 0}</td>
+                <td>\${p.is_active ? 'Active' : 'Inactive'}</td>
+              </tr>
+            \`).join('');
+          });
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+function generateProductFormPage(req: any, product: any) {
+  const isNew = !product;
+  const session = req.query.session ? `?session=${req.query.session}` : '';
+
+  // Extract sizes/colors from variants
+  let sizes = new Set();
+  let colors = new Set();
+  if (product && product.product_variants) {
+    product.product_variants.forEach((v: any) => {
+      if (v.size) sizes.add(v.size);
+      if (v.color) colors.add(v.color);
+    });
+  }
+  const sizesStr = Array.from(sizes).join(', ');
+  const colorsStr = Array.from(colors).join(', ');
+  const categoryName = product?.categories?.name || '';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${isNew ? 'New Product' : 'Edit Product'}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .main { padding: 30px; max-width: 800px; margin: 0 auto; }
+        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #4a5568; }
+        input, textarea, select { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; box-sizing: border-box; }
+        .row { display: flex; gap: 20px; }
+        .col { flex: 1; }
+        .btn { background: #4299e1; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
+        .btn-del { background: #e53e3e; margin-left: 10px; }
+        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>${isNew ? 'New Product' : 'Edit Product'}</h1>
+        <a href="/products${session}" class="back-btn">Cancel</a>
+      </div>
+      <div class="main">
+        <div class="card">
+          <form id="prod-form">
+            <div class="form-group">
+              <label>Name</label>
+              <input name="name" required value="${product?.name || ''}">
+            </div>
+            <div class="row">
+              <div class="col form-group">
+                <label>Price ($)</label>
+                <input name="price" type="number" step="0.01" required value="${product?.price ? Number(product.price) : ''}">
+              </div>
+              <div class="col form-group">
+                <label>Category</label>
+                <input name="category" required value="${categoryName}">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea name="description" rows="4">${product?.description || ''}</textarea>
+            </div>
+            
+            <hr style="border:0;border-top:1px solid #eee;margin:20px 0">
+            <h3>Inventory & Variants</h3>
+            
+            <div class="row">
+              <div class="col form-group">
+                <label>Stock Quantity</label>
+                <input name="inventoryQuantity" type="number" value="${product?.stock_quantity || 0}">
+              </div>
+              <div class="col form-group">
+                <label>Active</label>
+                <select name="active">
+                  <option value="true" ${product?.is_active !== false ? 'selected' : ''}>Yes</option>
+                  <option value="false" ${product?.is_active === false ? 'selected' : ''}>No</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label>Sizes (comma separated)</label>
+              <input name="sizes" placeholder="S, M, L, XL" value="${sizesStr}">
+            </div>
+            <div class="form-group">
+              <label>Colors (comma separated)</label>
+              <input name="colors" placeholder="Red, Blue, Green" value="${colorsStr}">
+            </div>
+            <div class="form-group">
+              <label>Image URL</label>
+              <input name="images" placeholder="https://..." value="${product?.image_url || ''}">
+            </div>
+
+            <div style="margin-top:30px">
+              <button type="submit" class="btn">Save Product</button>
+              ${!isNew ? `<button type="button" class="btn btn-del" onclick="deleteProd()">Delete</button>` : ''}
+            </div>
+          </form>
+        </div>
+      </div>
+      <script>
+        const isNew = ${isNew};
+        const id = '${product?.id || ''}';
+        const session = '${session}';
+
+        document.getElementById('prod-form').onsubmit = async (e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target);
+          const data = Object.fromEntries(formData.entries());
+          
+          const url = isNew ? '/api/products' + session : '/api/products/' + id + session;
+          const method = isNew ? 'POST' : 'PUT';
+          
+          try {
+            const res = await fetch(url, {
+              method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            if (res.ok) {
+              window.location.href = '/products' + session;
+            } else {
+              alert('Failed to save');
+            }
+          } catch {
+            alert('Error saving product');
           }
+        };
+
+        function deleteProd() {
+          if (!confirm('Are you sure?')) return;
+          fetch('/api/products/' + id + session, { method: 'DELETE' })
+            .then(res => {
+              if (res.ok) window.location.href = '/products' + session;
+              else alert('Failed to delete');
+            });
         }
       </script>
     </body>

@@ -11,6 +11,7 @@
     "db:push": "prisma db push"
   },
   "dependencies": {
+    "@mailchimp/mailchimp_marketing": "^3.0.80",
     "@prisma/client": "^5.7.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.3",
@@ -21,6 +22,7 @@
     "helmet": "^8.1.0",
     "ngrok": "^5.0.0-beta.2",
     "node-cron": "^4.2.1",
+    "shippo": "^2.15.0",
     "stripe": "^19.3.0",
     "winston": "^3.18.3"
   },

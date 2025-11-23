@@ -10,7 +10,7 @@ try {
   prisma = globalForPrisma.prisma ?? new PrismaClient({
     log: ['query', 'error', 'warn'],
   });
-  
+
   if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 } catch (error) {
   console.warn('Prisma client not initialized. Please run "npx prisma generate" first.');
@@ -21,14 +21,14 @@ try {
 // Create default admin user
 async function createDefaultUser() {
   try {
-    if (prisma.user) {
+    if ((prisma as any).users) {
       // Check if admin user already exists
-      const existingUser = await prisma.user.findUnique({
+      const existingUser = await (prisma as any).users.findUnique({
         where: { email: 'shreyas@fruitstandny.com' }
       });
 
       if (!existingUser) {
-        await prisma.user.create({
+        await (prisma as any).users.create({
           data: {
             name: 'Shreyas',
             email: 'shreyas@fruitstandny.com',
@@ -51,7 +51,7 @@ async function connectDB() {
     if (prisma.$connect) {
       await prisma.$connect();
       console.log('Database connected successfully');
-      
+
       // Create default user after successful connection
       await createDefaultUser();
     } else {
