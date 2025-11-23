@@ -23,7 +23,7 @@ async function createDefaultUser() {
   try {
     if ((prisma as any).users) {
       // Check if admin user already exists
-      const existingUser = await (prisma as any).users.findUnique({
+      const existingUser = await (prisma as any).users.findFirst({
         where: { email: 'shreyas@fruitstandny.com' }
       });
 
