@@ -10,7 +10,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
 
     // Here you would typically verify the token and extract user information
     // For example purposes, we'll assume the token is valid
-    req.user = { id: 1, name: 'John Doe' }; // Mock user data
+    (req as any).user = { id: 1, name: 'John Doe' }; // Mock user data
 
     next();
 };

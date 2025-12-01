@@ -10,6 +10,8 @@ export const AuthService = {
             data: {
                 email,
                 password: hashedPassword,
+                // Prisma requires `name` — default to local-part of email when not provided
+                name: String(email).split('@')[0] ?? 'User',
             },
         });
     },

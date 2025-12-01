@@ -20,8 +20,9 @@ export function registerOrdersRoutes(
     logActivity?: (...args: any[]) => void;
   }
 ) {
-  const stripe = process.env.STRIPE_SECRET_KEY
-    ? new Stripe(process.env.STRIPE_SECRET_KEY, )
+  // Ensure a valid apiVersion is provided to the Stripe client to satisfy TypeScript/Runtime
+  const stripe: Stripe | null = process.env.STRIPE_SECRET_KEY
+    ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-10-29.clover' })
     : null;
 
   // Page

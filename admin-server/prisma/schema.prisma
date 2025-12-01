@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"  // Change to "sqlserver" or "postgresql" for Azure
-  url      = env("DATABASE_URL")
+  provider = "postgresql"      // use PostgreSQL for Supabase
+  url      = env("DATABASE_URL") // ensure DATABASE_URL is a full postgres:// URL
 }
 
 model User {

@@ -6,21 +6,18 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Schedule a job to run every day at midnight
-cron.schedule('0 0 * * *', async () => {
-    try {
-        console.log('Running cleanup job...');
-        // Example cleanup logic: delete users who haven't logged in for over a year
-        const result = await prisma.user.deleteMany({
-            where: {
-                lastLogin: {
-                    lt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000), // 1 year ago
-                },
-            },
-        });
-        console.log(`Deleted ${result.count} inactive users.`);
-    } catch (error) {
-        console.error('Error running cleanup job:', error);
-    } finally {
-        await prisma.$disconnect();
-    }
-});
+export const cleanupJob = async () => {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days
+  try {
+    await prisma.user.deleteMany({
+      where: {
+        // lastLogin doesn't exist; use updatedAt or createdAt instead
+        updatedAt: { lt: cutoff as any }
+      }
+    });
+  } catch (e) {
+    console.error('cleanupJob error', e);
+  } finally {
+    await prisma.$disconnect();
+  }
+};

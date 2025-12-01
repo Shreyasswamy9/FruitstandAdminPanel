@@ -16,6 +16,9 @@ import { registerCustomersRoutes } from './pages/customers';
 import { registerCollectionsRoutes } from './pages/collections';
 import { registerReviewsRoutes } from './pages/reviews';
 
+// add this import
+import supabase from './config/supabase';
+
 dotenv.config();
 
 const app = express();
@@ -54,16 +57,18 @@ function requireAuth(req: any, res: any, next: any) {
   if (!sessionId || !sessions.has(sessionId)) return res.redirect('/?error=invalid_session');
   const s = sessions.get(sessionId)!;
   if (Date.now() - s.lastActivity > SESSION_TIMEOUT) { sessions.delete(sessionId); return res.redirect('/?error=session_expired'); }
-  s.lastActivity = Date.now(); req.user = s;
+  s.lastActivity = Date.now();
+  // assign to typed request via any-cast to avoid TS errors
+  (req as any).user = s;
   logActivity(s.id, s.email, 'PAGE_ACCESS', { page: req.path, ipAddress: req.ip, userAgent: req.get('User-Agent') });
   next();
 }
 function requireAdmin(req: any, res: any, next: any) {
   requireAuth(req, res, () => {
-    const email = req.user.email;
+    const email = (req as any).user.email;
     const admin = email === 'shreyas@fruitstandny.com' || email.toLowerCase().includes('shreyas') || email === process.env.ADMIN_EMAIL;
     if (!admin) return res.status(403).send('Forbidden');
-    logActivity(req.user.id, req.user.email, 'ADMIN_ACCESS', { page: req.path, ipAddress: req.ip });
+    logActivity((req as any).user.id, (req as any).user.email, 'ADMIN_ACCESS', { page: req.path, ipAddress: req.ip });
     next();
   });
 }
@@ -177,7 +182,8 @@ app.post('/dev-login', (req: any, res: any) => {
 // Dashboard (links only)
 app.get('/dashboard', requireAuth, (req: any, res: any) => {
   const s = req.query.session ? `?session=${req.query.session}` : '';
-  const isAdmin = req.user.email === 'shreyas@fruitstandny.com' || req.user.email.toLowerCase().includes('shreyas') || req.user.email === process.env.ADMIN_EMAIL;
+  const user = (req as any).user;
+  const isAdmin = user.email === 'shreyas@fruitstandny.com' || user.email.toLowerCase().includes('shreyas') || user.email === process.env.ADMIN_EMAIL;
   res.send(`
     <!DOCTYPE html><html><head><title>Dashboard</title>
     <style>
@@ -191,7 +197,7 @@ app.get('/dashboard', requireAuth, (req: any, res: any) => {
     </style></head><body>
     <div class="header">
       <div>🍎 Admin Panel</div>
-      <div>${req.user.name} <button class="logout" onclick="logout()">Logout</button></div>
+      <div>${user.name} <button class="logout" onclick="logout()">Logout</button></div>
     </div>
     <div class="grid">
       <a class="card" href="/orders${s}"><div class="icon">📦</div><div class="title">Orders</div><div class="desc">Stripe orders</div></a>
@@ -243,7 +249,10 @@ registerOrdersRoutes(app, {
         return null;
       }
     }
-  }
+  },
+  prisma,
+  logActivity,
+  supabase // <-- provide Supabase client so orders endpoints use it
 });
 registerProductsRoutes(app, { prisma, logActivity, requireAuth, requireAdmin });
 registerAnalyticsRoutes(app, { requireAuth });
