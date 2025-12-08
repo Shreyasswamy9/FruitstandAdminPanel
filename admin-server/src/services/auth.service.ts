@@ -6,7 +6,8 @@ const prisma = new PrismaClient();
 export const AuthService = {
     register: async (email: string, password: string) => {
         const hashedPassword = await hash(password, 10);
-        return await prisma.user.create({
+        const usersDelegate = (prisma as any).users ?? (prisma as any).user;
+        return await usersDelegate.create({
             data: {
                 email,
                 password: hashedPassword,
@@ -17,7 +18,8 @@ export const AuthService = {
     },
 
     login: async (email: string, password: string) => {
-        const user = await prisma.user.findUnique({
+        const usersDelegate = (prisma as any).users ?? (prisma as any).user;
+        const user = await usersDelegate.findUnique({
             where: { email },
         });
         if (!user) {

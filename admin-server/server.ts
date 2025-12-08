@@ -54,9 +54,19 @@ async function logActivity(userId: string, userEmail: string, action: string, de
 // Auth middlewares (shared)
 function requireAuth(req: any, res: any, next: any) {
   const sessionId = req.headers.authorization?.replace('Bearer ', '') || req.query.session;
-  if (!sessionId || !sessions.has(sessionId)) return res.redirect('/?error=invalid_session');
+  if (!sessionId || !sessions.has(sessionId)) {
+    // If caller expects JSON (API/XHR/fetch), respond with 401 JSON instead of redirect
+    const acceptsJson = String(req.headers.accept || '').includes('application/json') || req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.path?.startsWith?.('/api/');
+    if (acceptsJson) return res.status(401).json({ error: 'invalid_session' });
+    return res.redirect('/?error=invalid_session');
+  }
   const s = sessions.get(sessionId)!;
-  if (Date.now() - s.lastActivity > SESSION_TIMEOUT) { sessions.delete(sessionId); return res.redirect('/?error=session_expired'); }
+  if (Date.now() - s.lastActivity > SESSION_TIMEOUT) {
+    sessions.delete(sessionId);
+    const acceptsJson = String(req.headers.accept || '').includes('application/json') || req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.path?.startsWith?.('/api/');
+    if (acceptsJson) return res.status(401).json({ error: 'session_expired' });
+    return res.redirect('/?error=session_expired');
+  }
   s.lastActivity = Date.now();
   // assign to typed request via any-cast to avoid TS errors
   (req as any).user = s;
@@ -127,8 +137,8 @@ app.get('/auth/callback', async (req: any, res: any) => {
     const email = ms.mail || ms.userPrincipalName;
     let user = { id: ms.id, name: ms.displayName, email };
     try {
-      if ((prisma as any).user) {
-        user = await (prisma as any).user.upsert({
+      if ((prisma as any).users) {
+        user = await (prisma as any).users.upsert({
           where: { email },
           update: { name: ms.displayName },
           create: { email, name: ms.displayName, password: 'oauth' }
@@ -237,14 +247,14 @@ registerOrdersRoutes(app, {
   dataProvider: {
     getOrderById: async (id: string) => {
       try {
-        return await (prisma as any).order.findUnique({ where: { id } });
+        return await (prisma as any).orders.findUnique({ where: { id } });
       } catch {
         return null;
       }
     },
     fulfillOrder: async (id: string) => {
       try {
-        return await (prisma as any).order.update({ where: { id }, data: { status: 'fulfilled' } });
+        return await (prisma as any).orders.update({ where: { id }, data: { status: 'fulfilled' } });
       } catch {
         return null;
       }
@@ -252,7 +262,7 @@ registerOrdersRoutes(app, {
   },
   prisma,
   logActivity,
-  supabase // <-- provide Supabase client so orders endpoints use it
+  supabase
 });
 registerProductsRoutes(app, { prisma, logActivity, requireAuth, requireAdmin });
 registerAnalyticsRoutes(app, { requireAuth });

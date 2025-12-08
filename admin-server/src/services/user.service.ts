@@ -1,33 +1,28 @@
 import { PrismaClient } from '@prisma/client';
-import { User } from '../types/user.types';
 
 const prisma = new PrismaClient();
 
-export const createUser = async (userData: User) => {
-    return await prisma.user.create({
-        data: userData,
-    });
-};
+export async function createUser(data: any) {
+  const users = (prisma as any).users ?? (prisma as any).user;
+  return users.create({ data });
+}
 
-export const getUserById = async (id: number) => {
-    return await prisma.user.findUnique({
-        where: { id: String(id) },
-    });
-};
+export async function getUserById(id: string) {
+  const users = (prisma as any).users ?? (prisma as any).user;
+  return users.findUnique({ where: { id: String(id) } });
+}
 
-export const getAllUsers = async () => {
-    return await prisma.user.findMany();
-};
+export async function listUsers() {
+  const users = (prisma as any).users ?? (prisma as any).user;
+  return users.findMany();
+}
 
-export const updateUser = async (id: number, userData: Partial<User>) => {
-    return await prisma.user.update({
-        where: { id: String(id) },
-        data: userData,
-    });
-};
+export async function updateUser(id: string, data: any) {
+  const users = (prisma as any).users ?? (prisma as any).user;
+  return users.update({ where: { id: String(id) }, data });
+}
 
-export const deleteUser = async (id: number) => {
-    return await prisma.user.delete({
-        where: { id: String(id) },
-    });
-};
+export async function deleteUser(id: string) {
+  const users = (prisma as any).users ?? (prisma as any).user;
+  return users.delete({ where: { id: String(id) } });
+}

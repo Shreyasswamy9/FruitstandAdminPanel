@@ -5,7 +5,9 @@ const prisma = new PrismaClient();
 
 export const getUsers = async (req: Request, res: Response) => {
     try {
-        const users = await prisma.user.findMany();
+        // resolve delegate (plural or singular) to avoid TS delegate-name issues
+        const usersDelegate = (prisma as any).users ?? (prisma as any).user;
+        const users = await usersDelegate.findMany();
         res.json(users);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch users' });
@@ -15,7 +17,8 @@ export const getUsers = async (req: Request, res: Response) => {
 export const createUser = async (req: Request, res: Response) => {
     const { name, email } = req.body;
     try {
-        const newUser = await prisma.user.create({
+        const usersDelegate = (prisma as any).users ?? (prisma as any).user;
+        const newUser = await usersDelegate.create({
             data: {
                 name: req.body.name,
                 email: req.body.email,

@@ -7,8 +7,8 @@ export function registerOrdersRoutes(
     requireAuth,
     dataProvider,
     prisma,
-    supabase, // NEW: prefer Supabase
-    logActivity = () => {}
+    logActivity = () => {},
+    supabase // <-- accept supabase client if provided
   }: {
     requireAuth: any;
     dataProvider?: {
@@ -16,8 +16,8 @@ export function registerOrdersRoutes(
       fulfillOrder: (id: string) => Promise<any>;
     };
     prisma?: any;
-    supabase?: any; // Supabase client (server-side)
     logActivity?: (...args: any[]) => void;
+    supabase?: any;
   }
 ) {
   // Ensure a valid apiVersion is provided to the Stripe client to satisfy TypeScript/Runtime
@@ -49,71 +49,29 @@ export function registerOrdersRoutes(
       return res.status(400).send(`Webhook Error: ${e.message}`);
     }
 
-    const canPersist = !!supabase || !!prisma?.order;
+    const canPersist = !!prisma?.order;
     if (!canPersist) {
       return res.json({ received: true, note: 'No DB client provided; webhook processed without persistence.' });
     }
 
-    const usingSupabase = !!supabase;
+    const usingSupabase = !!prisma;
 
-    const findOrderByPi = async (piId: string) => {
-      if (usingSupabase) {
-        const { data, error } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('payment_intent', piId)
-          .maybeSingle();
-        if (error && error.code !== 'PGRST116') throw error;
-        return data || null;
-      } else {
-        return prisma.order.findFirst({ where: { status: { endsWith: piId } } });
-      }
-    };
+    const findOrderByPi = async (piId: string) =>
+      prisma.orders.findFirst({ where: { status: { endsWith: piId } } });
 
     const createOrder = async (amount: number, status: string, piId: string) => {
       const existing = await findOrderByPi(piId);
       if (existing) return existing;
-
-      if (usingSupabase) {
-        const { data, error } = await supabase
-          .from('orders')
-          .insert([{ total: amount, status, payment_intent: piId }])
-          .select('*')
-          .maybeSingle();
-        if (error) throw error;
-        logActivity('system', 'stripe@webhook', 'ORDER_CREATE', { orderId: data?.id, total: amount, status });
-        return data;
-      } else {
-        const order = await prisma.order.create({ data: { total: amount, status: `${status}:${piId}` } });
-        logActivity('system', 'stripe@webhook', 'ORDER_CREATE', { orderId: order.id, total: amount, status });
-        return order;
-      }
+      const order = await prisma.orders.create({ data: { total: amount, status: `${status}:${piId}` } });
+      logActivity('system', 'stripe@webhook', 'ORDER_CREATE', { orderId: order.id, total: amount, status });
+      return order;
     };
 
     const updateOrder = async (status: string, piId: string) => {
-      if (usingSupabase) {
-        const { data: existing, error: findErr } = await supabase
-          .from('orders')
-          .select('id')
-          .eq('payment_intent', piId)
-          .maybeSingle();
-        if (findErr && findErr.code !== 'PGRST116') throw findErr;
-        if (!existing) return;
-
-        const { data, error } = await supabase
-          .from('orders')
-          .update({ status })
-          .eq('payment_intent', piId)
-          .select('id')
-          .maybeSingle();
-        if (error) throw error;
-        logActivity('system', 'stripe@webhook', 'ORDER_UPDATE', { orderId: data?.id, status });
-      } else {
-        const existing = await prisma.order.findFirst({ where: { status: { endsWith: piId } } });
-        if (!existing) return;
-        const updated = await prisma.order.update({ where: { id: existing.id }, data: { status: `${status}:${piId}` } });
-        logActivity('system', 'stripe@webhook', 'ORDER_UPDATE', { orderId: updated.id, status });
-      }
+      const existing = await findOrderByPi(piId);
+      if (!existing) return;
+      const updated = await prisma.orders.update({ where: { id: existing.id }, data: { status: `${status}:${piId}` } });
+      logActivity('system', 'stripe@webhook', 'ORDER_UPDATE', { orderId: updated.id, status });
     };
 
     switch (event.type) {
@@ -147,68 +105,162 @@ export function registerOrdersRoutes(
     res.json({ received: true });
   });
 
-  // Orders API (Stripe only)
+  // Helper: map DB order row -> UI order shape (tailored to sample columns)
+  const mapDbOrderToApi = (r: any) => {
+    if (!r) return null;
+
+    const createdAtRaw = r.created_at ?? r.createdAt ?? r.created_at_raw ?? null;
+    const createdAt = createdAtRaw ? new Date(createdAtRaw).toISOString() : null;
+
+    const total = typeof r.total_amount !== 'undefined' ? Number(r.total_amount)
+      : typeof r.total === 'number' ? r.total
+      : (typeof r.total_cents === 'number' ? r.total_cents / 100 : null);
+
+    const subtotal = typeof r.subtotal === 'number' ? Number(r.subtotal)
+      : (typeof r.subtotal_cents === 'number' ? r.subtotal_cents / 100 : null);
+
+    const shipping = typeof r.shipping_amount === 'number' ? Number(r.shipping_amount)
+      : (typeof r.shipping_cents === 'number' ? r.shipping_cents / 100 : 0);
+
+    const tax = typeof r.tax_amount === 'number' ? Number(r.tax_amount)
+      : (typeof r.tax_cents === 'number' ? r.tax_cents / 100 : 0);
+
+    const statusRaw = r.status ?? r.payment_status ?? '';
+    const paymentIntent = r.stripe_payment_intent_id ?? r.stripe_payment_intent ?? r.payment_intent ?? '';
+    const checkoutSession = r.stripe_checkout_session_id ?? r.stripe_checkout_session ?? '';
+
+    const shippingName = r.shipping_name ?? null;
+    const customerEmail = r.shipping_email ?? r.customer_email ?? null;
+    const orderNumber = r.order_number ?? null;
+
+    return {
+      id: String(r.id),
+      order_number: orderNumber,
+      user_id: r.user_id ?? null,
+      total: total,
+      subtotal_cents: subtotal != null ? Math.round(subtotal * 100) : null,
+      shipping_cents: shipping != null ? Math.round(shipping * 100) : null,
+      tax_cents: tax != null ? Math.round(tax * 100) : null,
+      status: statusRaw,
+      payment_status: r.payment_status ?? null,
+      payment_intent: paymentIntent || checkoutSession || null,
+      createdAt,
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+      customer: {
+        name: shippingName,
+        email: customerEmail,
+        phone: r.shipping_phone ?? null
+      },
+      shipping_address: {
+        address1: r.shipping_address_line1 ?? null,
+        address2: r.shipping_address_line2 ?? null,
+        city: r.shipping_city ?? null,
+        province: r.shipping_state ?? null,
+        postal_code: r.shipping_postal_code ?? null,
+        country: r.shipping_country ?? null
+      },
+      tracking_number: r.tracking_number ?? null,
+      carrier: r.carrier ?? null,
+      label_url: r.label_url ?? null,
+      timeline: Array.isArray(r.timeline) ? r.timeline : []
+    };
+  };
+
+  // Orders API (Stripe only) - prefer Supabase
   app.get('/api/orders', requireAuth, async (_req: any, res: any) => {
     try {
       if (supabase) {
+        // Fetch recent orders from Supabase and apply filter client-side
         const { data, error } = await supabase
           .from('orders')
-          .select('id,total,status,payment_intent,created_at')
-          .like('status', 'stripe_%')
-          .order('created_at', { ascending: false });
-        if (error) return res.status(500).json({ error: error.message });
-        const mapped = (data || []).map((r: any) => ({
-          id: r.id,
-          total: typeof r.total === 'number' ? r.total : Number(r.total ?? 0),
-          status: `${r.status || 'stripe_pending'}:${r.payment_intent || ''}`,
-          createdAt: r.created_at
-        }));
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(500);
+
+        if (error) {
+          console.error('Error fetching orders from supabase', error);
+          throw error;
+        }
+
+        const rows = (data || []).filter((r: any) =>
+          (typeof r.status === 'string' && r.status.startsWith('stripe_')) ||
+          !!r.stripe_payment_intent_id ||
+          !!r.stripe_checkout_session_id ||
+          r.status === 'pending'
+        );
+
+        const mapped = rows.map(mapDbOrderToApi);
         return res.json(mapped);
       }
-      if (prisma?.order) {
-        const orders = await prisma.order.findMany({
-          where: { status: { startsWith: 'stripe_' } },
-          orderBy: { createdAt: 'desc' }
-        });
-        return res.json(orders);
-      }
-      return res.json([]);
-    } catch (e: any) {
+
+      // Prisma fallback (unchanged)
+      if (!prisma?.orders) return res.status(503).json({ error: 'DB not ready' });
+      const rows = await prisma.orders.findMany({
+        where: {
+          OR: [
+            { status: { startsWith: 'stripe_' } },
+            { stripe_payment_intent_id: { not: null } },
+            { stripe_checkout_session_id: { not: null } },
+            { status: 'pending' }
+          ]
+        },
+        orderBy: { created_at: 'desc' } as any
+      });
+      res.json((rows || []).map(mapDbOrderToApi));
+    } catch (e) {
+      console.error('Error fetching orders', e);
       res.status(500).json({ error: 'Failed to fetch orders' });
     }
   });
 
+  // /api/orders/stripe - same safer Supabase approach
   app.get('/api/orders/stripe', requireAuth, async (_req: any, res: any) => {
     try {
       if (supabase) {
         const { data, error } = await supabase
           .from('orders')
-          .select('id,total,status,payment_intent,created_at')
-          .like('status', 'stripe_%')
-          .order('created_at', { ascending: false });
-        if (error) return res.status(500).json({ error: error.message });
-        const mapped = (data || []).map((r: any) => ({
-          id: r.id,
-          total: typeof r.total === 'number' ? r.total : Number(r.total ?? 0),
-          status: `${r.status || 'stripe_pending'}:${r.payment_intent || ''}`,
-          createdAt: r.created_at
-        }));
-        return res.json(mapped);
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(500);
+
+        if (error) {
+          console.error('Error fetching stripe orders from supabase', error);
+          throw error;
+        }
+
+        const rows = (data || []).filter((r: any) =>
+          (typeof r.status === 'string' && r.status.startsWith('stripe_')) ||
+          !!r.stripe_payment_intent_id ||
+          !!r.stripe_checkout_session_id ||
+          r.status === 'pending'
+        );
+
+        return res.json(rows.map(mapDbOrderToApi));
       }
-      if (prisma?.order) {
-        const orders = await prisma.order.findMany({
-          where: { status: { startsWith: 'stripe_' } },
-          orderBy: { createdAt: 'desc' }
+
+      if (prisma?.orders) {
+        const rows = await prisma.orders.findMany({
+          where: {
+            OR: [
+              { status: { startsWith: 'stripe_' } },
+              { stripe_payment_intent_id: { not: null } },
+              { stripe_checkout_session_id: { not: null } },
+              { status: 'pending' }
+            ]
+          },
+          orderBy: { created_at: 'desc' } as any
         });
-        return res.json(orders);
+        return res.json((rows || []).map(mapDbOrderToApi));
       }
+
       return res.json([]);
-    } catch (e: any) {
+    } catch (e) {
+      console.error('Error fetching stripe orders', e);
       res.status(500).json({ error: 'Failed to fetch orders' });
     }
   });
 
-  // API: get order details
+  // API: get order details - prefer Supabase
   app.get('/api/orders/:id', requireAuth, async (req: any, res: any) => {
     try {
       const id = String(req.params.id);
@@ -217,99 +269,25 @@ export function registerOrdersRoutes(
       if (dataProvider?.getOrderById) {
         order = await dataProvider.getOrderById(id);
       } else if (supabase) {
-        const { data: raw, error } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('id', isNaN(Number(id)) ? id : Number(id))
-          .maybeSingle();
-        if (error && error.code !== 'PGRST116') throw error;
-
-        if (raw) {
-          const statusRaw = String(raw.status || '');
-          const isPaid = statusRaw.startsWith('stripe_paid') || statusRaw.startsWith('stripe_refunded');
-          const created = raw.created_at || raw.createdAt || new Date().toISOString();
-          const totalDollars = Number(raw.total ?? 0);
-          const totalCents = Math.round(totalDollars * 100);
-
-          order = {
-            id: String(raw.id),
-            created_at: typeof created === 'string' ? created : new Date(created).toISOString(),
-            financial_status: isPaid ? 'paid' : 'unpaid',
-            fulfillment_status: raw.fulfillment_status || 'unfulfilled',
-            customer: raw.customer || null,
-            shipping_address: raw.shipping_address || null,
-            billing_address: raw.billing_address || null,
-            items: Array.isArray(raw.items) ? raw.items : [],
-
-            subtotal_cents: Number.isFinite(raw.subtotal_cents) ? raw.subtotal_cents : totalCents,
-            shipping_cents: Number.isFinite(raw.shipping_cents) ? raw.shipping_cents : 0,
-            tax_cents: Number.isFinite(raw.tax_cents) ? raw.tax_cents : 0,
-            total_cents: Number.isFinite(raw.total_cents) ? raw.total_cents : totalCents,
-
-            timeline: Array.isArray(raw.timeline) && raw.timeline.length
-              ? raw.timeline
-              : [
-                {
-                  title: 'Order created',
-                  when: new Date(created).toLocaleString(),
-                  note: statusRaw || 'Created from Stripe webhook'
-                }
-              ]
-          };
-        }
-      } else if (prisma?.order) {
-        // Fetch the raw order record from DB
-        const raw = await prisma.order.findFirst({
-          where: { id: (isNaN(Number(id)) ? id : Number(id)) } as any
-        });
-
-        if (raw) {
-          const statusRaw = String(raw.status || '');
-          const isPaid = statusRaw.startsWith('stripe_paid') || statusRaw.startsWith('stripe_refunded');
-          const created = (raw.createdAt || raw.created_at || new Date()) as any;
-          const totalDollars = Number(raw.total ?? 0);
-          const totalCents = Math.round(totalDollars * 100);
-
-          // Map DB record into the UI shape expected by the detail page
-          order = {
-            id: String(raw.id),
-            created_at: created instanceof Date ? created.toISOString() : String(created),
-            financial_status: isPaid ? 'paid' : 'unpaid',
-            fulfillment_status: 'unfulfilled',
-            customer: null,
-            shipping_address: null,
-            billing_address: null,
-            items: [],
-
-            subtotal_cents: totalCents, // without item lines we mirror total
-            shipping_cents: 0,
-            tax_cents: 0,
-            total_cents: totalCents,
-
-            timeline: [
-              {
-                title: 'Order created',
-                when:
-                  created instanceof Date
-                    ? created.toLocaleString()
-                    : String(created),
-                note: statusRaw || 'Created from Stripe webhook'
-              }
-            ]
-          };
-        }
+        const { data: raw, error } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
+        if (error) throw error;
+        if (raw) order = mapDbOrderToApi(raw);
+      } else if (prisma?.orders) {
+        const raw = await prisma.orders.findUnique({ where: { id } as any });
+        if (raw) order = mapDbOrderToApi(raw);
       } else {
         order = getMockOrder(id);
       }
 
       if (!order) return res.status(404).json({ error: 'Order not found' });
       res.json(order);
-    } catch {
+    } catch (e) {
+      console.error('Failed to load order', e);
       res.status(500).json({ error: 'Failed to load order' });
     }
   });
 
-  // API: fulfill order (kept simple; wire your own business logic)
+  // API: fulfill order (Supabase preferred)
   app.post('/api/orders/:id/fulfill', requireAuth, async (req: any, res: any) => {
     try {
       const id = String(req.params.id);
@@ -318,42 +296,32 @@ export function registerOrdersRoutes(
         return res.json({ ok: true, order: updated });
       }
       if (supabase) {
-        const { data: existing, error: findErr } = await supabase
-          .from('orders')
-          .select('id,fulfillment_status')
-          .eq('id', isNaN(Number(id)) ? id : Number(id))
-          .maybeSingle();
-        if (findErr && findErr.code !== 'PGRST116') throw findErr;
-        if (!existing) return res.status(404).json({ error: 'Order not found' });
-
-        const { data, error } = await supabase
-          .from('orders')
-          .update({ fulfillment_status: 'fulfilled', fulfilled_at: new Date().toISOString() })
-          .eq('id', existing.id)
-          .select('*')
-          .maybeSingle();
-        if (error) return res.status(500).json({ error: error.message });
-        return res.json({ ok: true, order: data });
+        const updates: any = { fulfillment_status: 'fulfilled', fulfilled_at: new Date().toISOString() };
+        const { data, error } = await supabase.from('orders').update(updates).eq('id', id).select('*').maybeSingle();
+        if (error) throw error;
+        return res.json({ ok: true, order: mapDbOrderToApi(data) });
       }
-      if (prisma?.order) {
-        // Example minimal Prisma update (adjust to your schema)
-        const updated = await prisma.order.update({
-          where: { id: (isNaN(Number(id)) ? id : Number(id)) } as any,
-          data: { status: 'stripe_paid' } // placeholder
+      if (prisma?.orders) {
+        const updatedRow = await prisma.orders.update({
+          where: { id } as any,
+          data: { fulfillment_status: 'fulfilled', fulfilled_at: new Date() }
         });
-        return res.json({ ok: true, order: updated });
+        return res.json({ ok: true, order: mapDbOrderToApi(updatedRow) });
       }
+
       const order = getMockOrder(id);
       order.fulfillment_status = 'fulfilled';
       (order as any).fulfilled_at = new Date().toISOString();
       res.json({ ok: true, order, note: 'Mock fulfillment (no persistence)' });
-    } catch {
+    } catch (e) {
+      console.error('Failed to fulfill order', e);
       res.status(500).json({ error: 'Failed to fulfill order' });
     }
   });
 }
 
 export function generateOrdersPage(req: any) {
+  const sessionSuffix = req?.query?.session ? `?session=${encodeURIComponent(String(req.query.session))}` : '';
   return `
     <!DOCTYPE html>
     <html>
@@ -385,7 +353,7 @@ export function generateOrdersPage(req: any) {
       <div class="header">
         <h1>📦 Orders Management</h1>
         <div>
-          <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back to Dashboard</a>
+          <a href="/dashboard${sessionSuffix}" class="back-btn">Back to Dashboard</a>
           <button class="refresh-btn" onclick="loadOrders()">Refresh</button>
         </div>
       </div>
@@ -397,31 +365,42 @@ export function generateOrdersPage(req: any) {
             <thead>
               <tr>
                 <th>Order ID</th>
+                <th>Order Number</th>
                 <th>Total</th>
                 <th>Status</th>
                 <th>Payment Intent</th>
+                <th>Customer Email</th>
                 <th>Created</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="ordersTableBody">
-              <tr><td colspan="6" class="center">Loading orders...</td></tr>
+              <tr><td colspan="8" class="center">Loading orders...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       
       <script>
+        // preserve session suffix for fetches and links
+        const sess = ${JSON.stringify(sessionSuffix)};
         async function loadOrders() {
           const tbody = document.getElementById('ordersTableBody');
-          tbody.innerHTML = '<tr><td colspan="6" class="center">Loading orders...</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="center">Loading orders...</td></tr>';
           try {
-            const res = await fetch('/api/orders${req.query.session ? `?session=${req.query.session}` : ''}', { credentials: 'same-origin' });
-            if (!res.ok) throw new Error('Failed to fetch orders');
+            const res = await fetch('/api/orders' + (sess || ''), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+            if (!res.ok) {
+              if (res.status === 401) {
+                // session invalid -> redirect to login page to get a new session
+                window.location.href = '/?error=invalid_session';
+                return;
+              }
+              throw new Error('Failed to fetch orders');
+            }
             const orders = await res.json();
 
             if (!orders || orders.length === 0) {
-              tbody.innerHTML = '<tr><td colspan="6" class="center">No Stripe orders found yet.</td></tr>';
+              tbody.innerHTML = '<tr><td colspan="8" class="center">No Stripe orders found yet.</td></tr>';
               return;
             }
 
@@ -435,12 +414,15 @@ export function generateOrdersPage(req: any) {
               const total = (typeof o.total === 'number') ? '$' + o.total.toFixed(2) : '-';
               const statusLabel = statusKey.replace('stripe_', '').replace('_', ' ').toUpperCase();
 
+              // ensure sessionSuffix appended to links so back/forward keeps session
               return \`
-                <tr onclick="location.href='/orders/\${o.id}'">
-                  <td><strong>\${o.id}</strong></td>
+                <tr>
+                  <td><a href="/orders/\${encodeURIComponent(o.id)}\${sess}"><strong>\${o.id}</strong></a></td>
+                  <td>\${o.order_number || '-'}</td>
                   <td>\${total}</td>
                   <td><span class="status-chip status-\${statusKey}">\${statusLabel}</span></td>
                   <td class="pi">\${piId ? \`\${piShort}\` : '-'}</td>
+                  <td>\${o.customer?.email || '-'}</td>
                   <td>\${created}</td>
                   <td class="small">
                     \${piId ? \`<a href="https://dashboard.stripe.com/\${location.hostname.includes('localhost') || location.hostname.endsWith('.ngrok-free.dev') ? 'test/' : ''}payments/\${piId}" target="_blank" rel="noopener">View in Stripe ↗</a>\` : '<span class="muted">No PI</span>'}
@@ -449,7 +431,7 @@ export function generateOrdersPage(req: any) {
             }).join('');
           } catch (e) {
             console.error(e);
-            tbody.innerHTML = '<tr><td colspan="6" class="center">Failed to load orders.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="center">Failed to load orders.</td></tr>';
           }
         }
 
