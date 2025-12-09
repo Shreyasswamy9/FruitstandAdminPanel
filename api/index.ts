@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createAdminApp } from "../admin-server/src/adminApp";
+import { createAdminApp } from "../admin-server/dist/adminApp";
 
 const app = createAdminApp();
 
