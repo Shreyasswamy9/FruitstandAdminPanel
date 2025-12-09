@@ -2,6 +2,133 @@ import express from 'express';
 import Stripe from 'stripe';
 import shippoFactory from 'shippo';
 
+type VariantInfo = {
+  raw: any;
+  summary: string;
+  size?: string;
+  color?: string;
+};
+
+function normalizeVariantDetails(details: any): VariantInfo {
+  if (!details) {
+    return { raw: null, summary: '' };
+  }
+
+  let parsed = details;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return { raw: details, summary: String(details) };
+    }
+  }
+
+  const options: string[] = [];
+  let size: string | undefined;
+  let color: string | undefined;
+
+  const registerOption = (label: string | undefined, value: any) => {
+    if (value === null || value === undefined) {
+      return;
+    }
+
+    let resolvedValue: string | undefined;
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      if ('value' in value && value.value != null) {
+        resolvedValue = String(value.value);
+      } else if ('label' in value && value.label != null) {
+        resolvedValue = String(value.label);
+      }
+    }
+
+    if (!resolvedValue) {
+      resolvedValue = typeof value === 'string' ? value : JSON.stringify(value);
+    }
+
+    if (!resolvedValue) {
+      return;
+    }
+
+    const labelText = label?.trim();
+    if (labelText) {
+      options.push(`${labelText}: ${resolvedValue}`);
+      const normalized = labelText.toLowerCase();
+      if (!size && normalized.includes('size')) {
+        size = resolvedValue;
+      }
+      if (!color && (normalized.includes('color') || normalized.includes('colour'))) {
+        color = resolvedValue;
+      }
+    } else {
+      options.push(resolvedValue);
+    }
+  };
+
+  const inspect = (input: any): void => {
+    if (input === null || input === undefined) {
+      return;
+    }
+
+    if (Array.isArray(input)) {
+      input.forEach((entry) => {
+        if (typeof entry === 'string') {
+          registerOption(undefined, entry);
+        } else if (typeof entry === 'object' && entry !== null) {
+          const label = (entry as any).label ?? (entry as any).name ?? (entry as any).option ?? (entry as any).key;
+          const value = (entry as any).value ?? (entry as any).option_value ?? (entry as any).value_label ?? (entry as any).content ?? (entry as any).selection;
+          if (label || value) {
+            registerOption(label, value ?? entry);
+          } else {
+            inspect(entry);
+          }
+        }
+      });
+      return;
+    }
+
+    if (typeof input === 'object') {
+      for (const [key, value] of Object.entries(input)) {
+        if (key === 'options' || key === 'variants' || key === 'attributes') {
+          inspect(value);
+          continue;
+        }
+
+        if (Array.isArray(value)) {
+          inspect(value);
+          continue;
+        }
+
+        if (typeof value === 'object' && value !== null) {
+          if ('label' in (value as any) || 'value' in (value as any)) {
+            const label = (value as any).label ?? key;
+            const innerValue = (value as any).value ?? (value as any).option_value ?? (value as any).content ?? value;
+            registerOption(label, innerValue);
+          } else {
+            inspect(value);
+          }
+          continue;
+        }
+
+        registerOption(key, value);
+      }
+      return;
+    }
+
+    if (typeof input === 'string') {
+      registerOption(undefined, input);
+    }
+  };
+
+  inspect(parsed);
+
+  return {
+    raw: parsed,
+    summary: options.join(', '),
+    size,
+    color
+  };
+}
+
 export function registerOrdersRoutes(
   app: any,
   {
@@ -145,11 +272,21 @@ export function registerOrdersRoutes(
         customerName: order.shipping_name,
         fulfilledByEmail: order.fulfilled_by?.email,
         fulfilledByProfileName: order.fulfilled_by?.raw_user_meta_data?.name,
-        order_items: order.order_items.map((i: any) => ({
-          ...i,
-          unit_price: Number(i.unit_price),
-          total_price: Number(i.total_price)
-        }))
+        order_items: order.order_items.map((i: any) => {
+          const variant = normalizeVariantDetails(i.variant_details);
+          return {
+            ...i,
+            unit_price: Number(i.unit_price),
+            total_price: Number(i.total_price),
+            variant_details: variant.raw,
+            variantSummary: variant.summary,
+            variant_summary: variant.summary,
+            variantSize: variant.size,
+            variant_size: variant.size,
+            variantColor: variant.color,
+            variant_color: variant.color
+          };
+        })
       };
 
       return res.json(serialized);
@@ -553,6 +690,7 @@ function generateOrderDetailPage(req: any) {
         .status-step-label { font-weight: 600; color: #2d3748; }
         .status-step-meta { font-size: 12px; color: #4a5568; }
         #label-link a { color: #4299e1; text-decoration: underline; }
+        .variant-meta { font-size: 12px; color: #4a5568; margin-top: 4px; }
       </style>
     </head>
     <body>
@@ -565,7 +703,7 @@ function generateOrderDetailPage(req: any) {
           <div class="card">
             <h3>Items</h3>
             <table id="items-table">
-              <thead><tr><th>Product</th><th>Qty</th><th>Price</th></tr></thead>
+              <thead><tr><th>Product</th><th>Size</th><th>Color</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -628,6 +766,118 @@ function generateOrderDetailPage(req: any) {
           \`).join('');
         };
 
+        const coerceVariantDetails = (details) => {
+          if (!details) return { summary: '', size: '', color: '' };
+          let parsed = details;
+          if (typeof parsed === 'string') {
+            try {
+              parsed = JSON.parse(parsed);
+            } catch {
+              return { summary: String(details), size: '', color: '' };
+            }
+          }
+
+          const options = [];
+          let size = '';
+          let color = '';
+
+          const pushOption = (label, value) => {
+            if (value === null || value === undefined) return;
+            let resolved = undefined;
+            if (typeof value === 'object' && !Array.isArray(value)) {
+              if (value.value != null) {
+                resolved = value.value;
+              } else if (value.label != null) {
+                resolved = value.label;
+              }
+            }
+            if (resolved === undefined) {
+              resolved = typeof value === 'string' ? value : JSON.stringify(value);
+            }
+            if (!resolved) return;
+
+            if (label) {
+              options.push(label + ': ' + resolved);
+              const lower = label.toLowerCase();
+              if (!size && lower.includes('size')) size = String(resolved);
+              if (!color && (lower.includes('color') || lower.includes('colour'))) color = String(resolved);
+            } else {
+              options.push(String(resolved));
+            }
+          };
+
+          const inspect = (input) => {
+            if (!input) return;
+            if (Array.isArray(input)) {
+              input.forEach((entry) => {
+                if (typeof entry === 'string') {
+                  pushOption(undefined, entry);
+                } else if (typeof entry === 'object' && entry !== null) {
+                  const label = entry.label ?? entry.name ?? entry.option ?? entry.key;
+                  const value = entry.value ?? entry.option_value ?? entry.value_label ?? entry.content ?? entry.selection;
+                  if (label || value) {
+                    pushOption(label, value ?? entry);
+                  } else {
+                    inspect(entry);
+                  }
+                }
+              });
+              return;
+            }
+
+            if (typeof input === 'object') {
+              Object.entries(input).forEach(([key, value]) => {
+                if (key === 'options' || key === 'variants' || key === 'attributes') {
+                  inspect(value);
+                  return;
+                }
+                if (Array.isArray(value)) {
+                  inspect(value);
+                  return;
+                }
+                if (typeof value === 'object' && value !== null) {
+                  if ('label' in value || 'value' in value) {
+                    const label = value.label ?? key;
+                    const inner = value.value ?? value.option_value ?? value.content ?? value.selection ?? value;
+                    pushOption(label, inner);
+                  } else {
+                    inspect(value);
+                  }
+                  return;
+                }
+                pushOption(key, value);
+              });
+              return;
+            }
+
+            if (typeof input === 'string') {
+              pushOption(undefined, input);
+            }
+          };
+
+          inspect(parsed);
+          return {
+            summary: options.join(', '),
+            size,
+            color
+          };
+        };
+
+        const resolveVariantInfo = (item) => {
+          const info = {
+            summary: item.variantSummary || item.variant_summary || '',
+            size: item.variantSize || item.variant_size || '',
+            color: item.variantColor || item.variant_color || ''
+          };
+
+          const fallback = coerceVariantDetails(item.variant_details);
+          return {
+            summary: info.summary || fallback.summary,
+            size: info.size || fallback.size,
+            color: info.color || fallback.color
+          };
+        };
+
         function load() {
           fetch('/api/orders/' + id + session)
             .then(r => r.json())
@@ -662,10 +912,30 @@ function generateOrderDetailPage(req: any) {
                 const productName = i.product_name || '-';
                 const quantity = typeof i.quantity === 'number' ? i.quantity : 0;
                 const unitPrice = typeof i.unit_price === 'number' ? i.unit_price : 0;
+                const totalPrice = typeof i.total_price === 'number' ? i.total_price : unitPrice * quantity;
+                const variant = resolveVariantInfo(i);
+
+                const sizeText = variant.size || '—';
+                const colorText = variant.color || '—';
+                const additionalMeta = (variant.summary || '')
+                  .split(',')
+                  .map(part => part.trim())
+                  .filter(Boolean)
+                  .filter(part => {
+                    const lower = part.toLowerCase();
+                    return !lower.startsWith('size:') && !lower.startsWith('color:') && !lower.startsWith('colour:');
+                  })
+                  .join(', ');
+
+                const metaHtml = additionalMeta ? '<div class="variant-meta">' + additionalMeta + '</div>' : '';
+
                 return '<tr>' +
-                  '<td>' + productName + '</td>' +
+                  '<td>' + productName + metaHtml + '</td>' +
+                  '<td>' + sizeText + '</td>' +
+                  '<td>' + colorText + '</td>' +
                   '<td>' + quantity + '</td>' +
                   '<td>$' + unitPrice.toFixed(2) + '</td>' +
+                  '<td>$' + totalPrice.toFixed(2) + '</td>' +
                 '</tr>';
               }).join('');
 
