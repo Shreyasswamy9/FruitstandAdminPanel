@@ -1,0 +1,10 @@
+{
+  "installCommand": "npm install --prefix admin-server",
+  "buildCommand": "cd admin-server && npx prisma generate && npm run build",
+  "outputDirectory": "admin-server/dist",
+  "functions": {
+    "api/index.ts": {
+      "runtime": "nodejs20.x"
+    }
+  }
+}
