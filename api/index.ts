@@ -1,8 +1,7 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createAdminApp } from "../admin-server/dist/adminApp";
+import { createAdminApp } from "../admin-server/src/adminApp";
 
 const app = createAdminApp();
 
-export default function handler(req: VercelRequest, res: VercelResponse): void {
-  app(req as any, res as any);
+export default function handler(req: any, res: any): void {
+  app(req, res);
 }
