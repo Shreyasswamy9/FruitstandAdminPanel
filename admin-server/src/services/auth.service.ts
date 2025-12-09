@@ -1,30 +1,37 @@
-import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { hash, compare } from 'bcryptjs';
-
-const prisma = new PrismaClient();
+import { prisma } from '../utils/prisma';
 
 export const AuthService = {
     register: async (email: string, password: string) => {
         const hashedPassword = await hash(password, 10);
-        return await prisma.user.create({
+
+        return prisma.users.create({
             data: {
+                id: randomUUID(),
                 email,
-                password: hashedPassword,
+                encrypted_password: hashedPassword,
+                created_at: new Date(),
+                updated_at: new Date(),
             },
         });
     },
 
     login: async (email: string, password: string) => {
-        const user = await prisma.user.findUnique({
+        const user = await prisma.users.findFirst({
             where: { email },
         });
-        if (!user) {
+
+        if (!user || !user.encrypted_password) {
             throw new Error('User not found');
         }
-        const isValid = await compare(password, user.password);
+
+        const isValid = await compare(password, user.encrypted_password);
+
         if (!isValid) {
             throw new Error('Invalid password');
         }
+
         return user;
     },
 };

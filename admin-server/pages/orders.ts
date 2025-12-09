@@ -1,6 +1,6 @@
 import express from 'express';
 import Stripe from 'stripe';
-import Shippo from 'shippo';
+import shippoFactory from 'shippo';
 
 export function registerOrdersRoutes(
   app: any,
@@ -18,8 +18,8 @@ export function registerOrdersRoutes(
     ? new Stripe(process.env.STRIPE_SECRET_KEY)
     : null;
 
-  const shippo = process.env.SHIPPO_API_TOKEN
-    ? new Shippo({ shippoToken: process.env.SHIPPO_API_TOKEN })
+  const shippoClient = process.env.SHIPPO_API_TOKEN
+    ? shippoFactory(process.env.SHIPPO_API_TOKEN)
     : null;
 
   // Page
@@ -35,22 +35,35 @@ export function registerOrdersRoutes(
   // API: Get Orders
   app.get('/api/orders', requireAuth, async (_req: any, res: any) => {
     try {
-      const orders = await prisma.order.findMany({
-        orderBy: { createdAt: 'desc' },
+      const orders = await prisma.orders.findMany({
+        orderBy: { created_at: 'desc' },
         select: {
           id: true,
-          orderNumber: true,
-          totalAmount: true,
-          paymentStatus: true,
-          status: true, // Note: schema uses 'status' not 'orderStatus'
-          createdAt: true
+          order_number: true,
+          total_amount: true,
+          payment_status: true,
+          status: true,
+          created_at: true,
+          shipping_name: true,
+          fulfilled_at: true,
+          shipped_at: true,
+          fulfilled_by_name: true,
+          fulfilled_by_id: true
         }
       });
 
-      // Serialize Decimals
       const serialized = orders.map((o: any) => ({
-        ...o,
-        totalAmount: Number(o.totalAmount)
+        id: o.id,
+        orderNumber: o.order_number,
+        totalAmount: Number(o.total_amount),
+        paymentStatus: o.payment_status,
+        status: o.status,
+        createdAt: o.created_at,
+        receivedName: o.shipping_name,
+        fulfilledAt: o.fulfilled_at,
+        fulfilledById: o.fulfilled_by_id,
+        fulfilledByName: o.fulfilled_by_name,
+        shippedAt: o.shipped_at
       }));
 
       return res.json(serialized);
@@ -64,10 +77,22 @@ export function registerOrdersRoutes(
   app.get('/api/orders/:id', requireAuth, async (req: any, res: any) => {
     try {
       const id = req.params.id;
-      const order = await prisma.order.findUnique({
+      const order = await prisma.orders.findUnique({
         where: { id },
         include: {
-          order_items: true
+          order_items: true,
+          customer: {
+            select: {
+              email: true,
+              raw_user_meta_data: true
+            }
+          },
+          fulfilled_by: {
+            select: {
+              email: true,
+              raw_user_meta_data: true
+            }
+          }
         }
       });
 
@@ -75,11 +100,51 @@ export function registerOrdersRoutes(
 
       // Serialize Decimals
       const serialized = {
-        ...order,
-        totalAmount: Number(order.totalAmount),
+        id: order.id,
+        orderNumber: order.order_number,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        totalAmount: Number(order.total_amount),
         subtotal: Number(order.subtotal),
-        tax_amount: Number(order.tax_amount),
-        shipping_amount: Number(order.shipping_amount),
+        tax_amount: Number(order.tax_amount ?? 0),
+        shipping_amount: Number(order.shipping_amount ?? 0),
+        discount_amount: Number(order.discount_amount ?? 0),
+        shipping_name: order.shipping_name,
+        shipping_email: order.shipping_email,
+        shipping_phone: order.shipping_phone,
+        shipping_address_line1: order.shipping_address_line1,
+        shipping_address_line2: order.shipping_address_line2,
+        shipping_city: order.shipping_city,
+        shipping_state: order.shipping_state,
+        shipping_postal_code: order.shipping_postal_code,
+        shipping_country: order.shipping_country,
+        tracking_number: order.tracking_number,
+        carrier: order.carrier,
+        notes: order.notes,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        createdAt: order.created_at,
+        updatedAt: order.updated_at,
+        tracking_url: order.tracking_url,
+        label_url: order.label_url,
+        fulfilled_at: order.fulfilled_at,
+        fulfilled_by_id: order.fulfilled_by_id,
+        fulfilled_by_name: order.fulfilled_by_name,
+        shipped_at: order.shipped_at,
+        customer_email: order.customer?.email ?? order.shipping_email,
+        customer_name: order.shipping_name,
+        fulfilled_by_email: order.fulfilled_by?.email,
+        fulfilled_by_profile_name: order.fulfilled_by?.raw_user_meta_data?.name,
+        trackingNumber: order.tracking_number,
+        labelUrl: order.label_url,
+        fulfilledAt: order.fulfilled_at,
+        fulfilledById: order.fulfilled_by_id,
+        fulfilledByName: order.fulfilled_by_name,
+        shippedAt: order.shipped_at,
+        customerEmail: order.customer?.email ?? order.shipping_email,
+        customerName: order.shipping_name,
+        fulfilledByEmail: order.fulfilled_by?.email,
+        fulfilledByProfileName: order.fulfilled_by?.raw_user_meta_data?.name,
         order_items: order.order_items.map((i: any) => ({
           ...i,
           unit_price: Number(i.unit_price),
@@ -94,17 +159,152 @@ export function registerOrdersRoutes(
     }
   });
 
+  // API: Mark Order Fulfilled
+  app.post('/api/orders/:id/fulfill', requireAuth, async (req: any, res: any) => {
+    try {
+      const id = req.params.id;
+      const actorId = req.user?.id;
+
+      if (!actorId) {
+        return res.status(401).json({ error: 'Missing user context for fulfillment' });
+      }
+
+      let actorName = req.user?.name as string | undefined;
+      let actorEmail = req.user?.email as string | undefined;
+
+      if (!actorName || !actorEmail) {
+        const actorRecord = await prisma.users.findUnique({
+          where: { id: actorId },
+          select: {
+            email: true,
+            raw_user_meta_data: true
+          }
+        });
+
+        actorEmail = actorEmail ?? actorRecord?.email ?? 'system@fruitstand.local';
+        actorName = actorName ?? actorRecord?.raw_user_meta_data?.name ?? actorRecord?.email ?? 'Unknown User';
+      }
+
+      const now = new Date();
+      const isValidActorId = typeof actorId === 'string' && /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}$/.test(actorId);
+
+      const updatePayload: any = {
+        status: 'fulfilled',
+        fulfilled_by_name: actorName,
+        fulfilled_at: now,
+        updated_at: now
+      };
+
+      if (isValidActorId) {
+        updatePayload.fulfilled_by_id = actorId;
+      }
+
+      const updated = await prisma.orders.update({
+        where: { id },
+        data: updatePayload,
+        select: {
+          id: true,
+          fulfilled_by_name: true,
+          fulfilled_at: true,
+          status: true
+        }
+      });
+
+      const logActorId = typeof actorId === 'string' ? actorId : 'system';
+      logActivity(logActorId, actorEmail ?? 'system@fruitstand.local', 'ORDER_FULFILL', { orderId: id });
+
+      return res.json({
+        ok: true,
+        fulfilledByName: updated.fulfilled_by_name,
+        fulfilledAt: updated.fulfilled_at,
+        status: updated.status
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2025') {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      console.error(e);
+      res.status(500).json({ error: 'Failed to mark order fulfilled' });
+    }
+  });
+
+  // API: Undo Fulfillment
+  app.post('/api/orders/:id/undo-fulfill', requireAuth, async (req: any, res: any) => {
+    try {
+      const id = req.params.id;
+      const actorId = req.user?.id;
+
+      if (!actorId) {
+        return res.status(401).json({ error: 'Missing user context for undo' });
+      }
+
+      const existing = await prisma.orders.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          shipped_at: true
+        }
+      });
+
+      if (!existing) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (existing.status === 'shipped' || existing.shipped_at) {
+        return res.status(400).json({ error: 'Cannot undo fulfillment on a shipped order' });
+      }
+
+      let actorEmail = req.user?.email as string | undefined;
+
+      if (!actorEmail && typeof actorId === 'string' && /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}$/.test(actorId)) {
+        const actorRecord = await prisma.users.findUnique({
+          where: { id: actorId },
+          select: { email: true }
+        });
+        actorEmail = actorRecord?.email ?? 'system@fruitstand.local';
+      }
+
+      const now = new Date();
+      const updated = await prisma.orders.update({
+        where: { id },
+        data: {
+          status: 'pending',
+          fulfilled_at: null,
+          fulfilled_by_id: null,
+          fulfilled_by_name: null,
+          updated_at: now
+        },
+        select: {
+          id: true,
+          status: true
+        }
+      });
+
+      const logActorId = typeof actorId === 'string' ? actorId : 'system';
+      logActivity(logActorId, actorEmail ?? 'system@fruitstand.local', 'ORDER_UNDO_FULFILL', { orderId: id });
+
+      return res.json({ ok: true, status: updated.status });
+    } catch (e: any) {
+      if (e?.code === 'P2025') {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      console.error(e);
+      res.status(500).json({ error: 'Failed to undo fulfillment' });
+    }
+  });
+
   // API: Create Shipping Label (Shippo)
   app.post('/api/orders/:id/label', requireAuth, async (req: any, res: any) => {
     try {
       const id = req.params.id;
-      if (!shippo) return res.status(500).json({ error: 'Shippo not configured' });
+      if (!shippoClient) return res.status(500).json({ error: 'Shippo not configured' });
 
-      const order = await prisma.order.findUnique({ where: { id } });
+      const order = await prisma.orders.findUnique({ where: { id } });
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
       // Create shipment using individual address fields
-      const shipment = await shippo.shipment.create({
+      const shipment = await shippoClient.shipment.create({
         address_from: {
           name: "Fruitstand NY",
           street1: "123 Fruit Lane",
@@ -140,7 +340,7 @@ export function registerOrdersRoutes(
       }
 
       const rate = shipment.rates[0];
-      const transaction = await shippo.transaction.create({
+      const transaction = await shippoClient.transaction.create({
         rate: rate.object_id,
         label_file_type: "PDF_4x6",
         async: false
@@ -150,21 +350,51 @@ export function registerOrdersRoutes(
         const trackingNumber = transaction.tracking_number;
         const labelUrl = transaction.label_url;
 
-        // Update order
-        await prisma.order.update({
-          where: { id },
-          data: {
-            trackingNumber,
-            status: 'shipped',
-            // shippedAt is not in the pulled schema? 
-            // Schema has `createdAt`, `updatedAt`. 
-            // It doesn't seem to have `shippedAt`. 
-            // I'll skip it or check if I missed it.
-            // Schema has `status`.
+        const actorId = req.user?.id;
+        let actorName = req.user?.name as string | undefined;
+        let actorEmail = req.user?.email as string | undefined;
+
+        const isValidActorId = typeof actorId === 'string' && /^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}$/.test(actorId);
+
+        if ((!actorName || !actorEmail) && isValidActorId) {
+          const actorRecord = await prisma.users.findUnique({
+            where: { id: actorId },
+            select: {
+              email: true,
+              raw_user_meta_data: true
+            }
+          });
+
+          actorEmail = actorEmail ?? actorRecord?.email ?? 'system@fruitstand.local';
+          actorName = actorName ?? actorRecord?.raw_user_meta_data?.name ?? actorRecord?.email ?? 'Unknown User';
+        }
+
+        const now = new Date();
+        const updateData: any = {
+          tracking_number: trackingNumber,
+          label_url: labelUrl,
+          status: 'shipped',
+          updated_at: now,
+          shipped_at: now
+        };
+
+        if (!order.fulfilled_at) {
+          updateData.fulfilled_at = now;
+          updateData.fulfilled_by_name = actorName ?? 'Unknown User';
+          if (isValidActorId) {
+            updateData.fulfilled_by_id = actorId;
           }
+        }
+
+        // Update order
+        await prisma.orders.update({
+          where: { id },
+          data: updateData
         });
 
-        logActivity(req.user.id, req.user.email, 'ORDER_SHIP', { orderId: id, trackingNumber });
+        const logActorId = actorId ?? 'system';
+        const logActorEmail = actorEmail ?? 'system@fruitstand.local';
+        logActivity(logActorId, logActorEmail, 'ORDER_SHIP', { orderId: id, trackingNumber });
         return res.json({ ok: true, trackingNumber, labelUrl });
       } else {
         return res.status(400).json({ error: 'Failed to generate label', details: transaction.messages });
@@ -198,6 +428,12 @@ function generateOrdersPage(req: any) {
         .status-pending { background: #bee3f8; color: #2b6cb0; }
         .status-failed { background: #fed7d7; color: #9b2c2c; }
         .status-shipped { background: #d6bcfa; color: #553c9a; }
+        .status-flow { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+        .status-step { display: flex; align-items: flex-start; gap: 8px; color: #4a5568; }
+        .status-step-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5f5; margin-top: 4px; }
+        .status-step.active .status-step-dot { background: #667eea; }
+        .status-step-label { font-weight: 600; color: #2d3748; }
+        .status-step-meta { font-size: 12px; color: #4a5568; }
       </style>
     </head>
     <body>
@@ -212,8 +448,8 @@ function generateOrdersPage(req: any) {
               <tr>
                 <th>Order #</th>
                 <th>Total</th>
+                <th>Progress</th>
                 <th>Payment</th>
-                <th>Status</th>
                 <th>Date</th>
               </tr>
             </thead>
@@ -233,15 +469,55 @@ function generateOrdersPage(req: any) {
               tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">No orders found</td></tr>';
               return;
             }
-            tbody.innerHTML = orders.map(o => \`
-              <tr onclick="location.href='/orders/\${o.id}' + session">
-                <td>\${o.orderNumber || o.id}</td>
-                <td>$\${(o.totalAmount || 0).toFixed(2)}</td>
-                <td><span class="status status-\${(o.paymentStatus || 'pending').toLowerCase()}">\${o.paymentStatus}</span></td>
-                <td><span class="status status-\${(o.status || 'pending').toLowerCase()}">\${o.status}</span></td>
-                <td>\${new Date(o.createdAt).toLocaleDateString()}</td>
-              </tr>
-            \`).join('');
+            const formatDate = (value) => {
+              if (!value) return '-';
+              const date = new Date(value);
+              return date.toLocaleString();
+            };
+
+            tbody.innerHTML = orders.map(o => {
+              const receivedMeta = \`\${o.receivedName || '—'} • \${formatDate(o.createdAt)}\`;
+              const fulfilledMeta = \`\${o.fulfilledByName ? 'by ' + o.fulfilledByName : 'Pending'}\${o.fulfilledAt ? ' • ' + formatDate(o.fulfilledAt) : ''}\`;
+              const shippedMeta = o.shippedAt ? formatDate(o.shippedAt) : 'Awaiting label';
+              const fulfilledClass = o.fulfilledAt ? 'active' : '';
+              const shippedClass = o.shippedAt ? 'active' : '';
+              const fulfilledClassAttr = fulfilledClass ? ' active' : '';
+              const shippedClassAttr = shippedClass ? ' active' : '';
+
+              return \`
+                <tr onclick="location.href='/orders/\${o.id}' + session">
+                  <td>\${o.orderNumber || o.id}</td>
+                  <td>$\${(o.totalAmount || 0).toFixed(2)}</td>
+                  <td>
+                    <div class="status-flow">
+                      <div class="status-step active">
+                        <div class="status-step-dot"></div>
+                        <div>
+                          <div class="status-step-label">Received</div>
+                          <div class="status-step-meta">\${receivedMeta}</div>
+                        </div>
+                      </div>
+                      <div class="status-step\${fulfilledClassAttr}">
+                        <div class="status-step-dot"></div>
+                        <div>
+                          <div class="status-step-label">Fulfilled</div>
+                          <div class="status-step-meta">\${fulfilledMeta}</div>
+                        </div>
+                      </div>
+                      <div class="status-step\${shippedClassAttr}">
+                        <div class="status-step-dot"></div>
+                        <div>
+                          <div class="status-step-label">Shipped</div>
+                          <div class="status-step-meta">\${shippedMeta}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="status status-\${(o.paymentStatus || 'pending').toLowerCase()}">\${o.paymentStatus}</span></td>
+                  <td>\${formatDate(o.createdAt)}</td>
+                </tr>
+              \`;
+            }).join('');
           });
       </script>
     </body>
@@ -264,10 +540,19 @@ function generateOrderDetailPage(req: any) {
         .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
         .btn { background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn.secondary { background: #48bb78; }
+        .btn.danger { background: #f56565; }
         .info-row { margin-bottom: 10px; }
         .info-label { font-weight: bold; font-size: 12px; color: #718096; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+        .status-flow { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .status-step { display: flex; align-items: flex-start; gap: 10px; color: #4a5568; }
+        .status-step-dot { width: 12px; height: 12px; border-radius: 50%; background: #cbd5f5; margin-top: 4px; }
+        .status-step.active .status-step-dot { background: #667eea; }
+        .status-step-label { font-weight: 600; color: #2d3748; }
+        .status-step-meta { font-size: 12px; color: #4a5568; }
+        #label-link a { color: #4299e1; text-decoration: underline; }
       </style>
     </head>
     <body>
@@ -292,13 +577,17 @@ function generateOrderDetailPage(req: any) {
             <div class="info-row"><div class="info-label">Payment</div><div id="p-status">-</div></div>
             <div class="info-row"><div class="info-label">Fulfillment</div><div id="o-status">-</div></div>
             <div class="info-row"><div class="info-label">Tracking</div><div id="tracking">-</div></div>
-            
+            <div class="status-flow" id="status-flow"></div>
+
+            <button id="fulfill-btn" class="btn secondary" onclick="fulfillOrder()">Mark as Fulfilled</button>
+            <button id="undo-fulfill-btn" class="btn danger" style="display:none" onclick="undoFulfill()">Undo Fulfillment</button>
             <button id="ship-btn" class="btn" onclick="createLabel()">Create Shipping Label</button>
             <div id="label-link" style="margin-top:10px;text-align:center"></div>
           </div>
           
           <div class="card">
             <h3>Customer</h3>
+            <div id="c-name" style="font-weight:600">-</div>
             <div id="c-email">-</div>
             <div id="c-address" style="font-size:13px;color:#666;margin-top:5px">-</div>
           </div>
@@ -309,15 +598,56 @@ function generateOrderDetailPage(req: any) {
         const session = '${req.query.session ? `?session=${req.query.session}` : ''}';
         const id = '${id}';
         
+        const formatDateTime = (value) => {
+          if (!value) return '-';
+          return new Date(value).toLocaleString();
+        };
+
+        const buildStatusFlow = (order) => {
+          const customerName = order.customerName || order.customer_name || order.shipping_name || '—';
+          const receivedMeta = customerName + ' • ' + formatDateTime(order.created_at || order.createdAt);
+          const fulfilledBy = order.fulfilledByName || order.fulfilled_by_name;
+          const fulfilledMeta = (fulfilledBy ? 'by ' + fulfilledBy : 'Pending') + ((order.fulfilledAt || order.fulfilled_at) ? ' • ' + formatDateTime(order.fulfilledAt || order.fulfilled_at) : '');
+          const shippedMeta = (order.shippedAt || order.shipped_at) ? formatDateTime(order.shippedAt || order.shipped_at) : 'Awaiting label';
+          const shippedActive = Boolean(order.shippedAt || order.shipped_at || order.status === 'shipped');
+
+          const steps = [
+            { label: 'Received', active: true, meta: receivedMeta },
+            { label: 'Fulfilled', active: Boolean(order.fulfilledAt || order.fulfilled_at), meta: fulfilledMeta },
+            { label: 'Shipped', active: shippedActive, meta: shippedMeta }
+          ];
+
+          return steps.map(step => \`
+              <div class="status-step \${step.active ? 'active' : ''}">
+              <div class="status-step-dot"></div>
+              <div>
+                <div class="status-step-label">\${step.label}</div>
+                <div class="status-step-meta">\${step.meta}</div>
+              </div>
+            </div>
+          \`).join('');
+        };
+
         function load() {
           fetch('/api/orders/' + id + session)
             .then(r => r.json())
             .then(o => {
-              document.getElementById('p-status').textContent = o.paymentStatus;
-              document.getElementById('o-status').textContent = o.status;
-              document.getElementById('tracking').textContent = o.trackingNumber || 'None';
-              document.getElementById('c-email').textContent = o.shipping_email || o.email; // Fallback? Schema has shipping_email
-              
+              const paymentStatus = o.paymentStatus || o.payment_status || 'pending';
+              const fulfillmentStatus = o.status || 'pending';
+              const trackingNumber = o.trackingNumber || o.tracking_number;
+              const labelUrl = o.labelUrl || o.label_url;
+
+              document.getElementById('p-status').textContent = paymentStatus;
+              document.getElementById('o-status').textContent = fulfillmentStatus;
+              document.getElementById('tracking').textContent = trackingNumber || 'None';
+
+              document.getElementById('status-flow').innerHTML = buildStatusFlow(o);
+
+              const customerName = o.customerName || o.customer_name || o.shipping_name;
+              const customerEmail = o.customerEmail || o.customer_email || o.shipping_email || o.email;
+              document.getElementById('c-name').textContent = customerName || '—';
+              document.getElementById('c-email').textContent = customerEmail || '—';
+
               document.getElementById('c-address').textContent = [
                 o.shipping_address_line1,
                 o.shipping_address_line2,
@@ -326,24 +656,66 @@ function generateOrderDetailPage(req: any) {
                 o.shipping_postal_code,
                 o.shipping_country
               ].filter(Boolean).join(', ');
-              
-              const items = o.order_items || [];
-              document.getElementById('items-table').querySelector('tbody').innerHTML = items.map(i => \`
-                <tr>
-                  <td>\${i.product_name}</td>
-                  <td>\${i.quantity}</td>
-                  <td>$\${(i.unit_price || 0).toFixed(2)}</td>
-                </tr>
-              \`).join('');
 
-              if (o.trackingNumber) {
-                document.getElementById('ship-btn').style.display = 'none';
+              const items = o.order_items || [];
+              document.getElementById('items-table').querySelector('tbody').innerHTML = items.map(i => {
+                const productName = i.product_name || '-';
+                const quantity = typeof i.quantity === 'number' ? i.quantity : 0;
+                const unitPrice = typeof i.unit_price === 'number' ? i.unit_price : 0;
+                return '<tr>' +
+                  '<td>' + productName + '</td>' +
+                  '<td>' + quantity + '</td>' +
+                  '<td>$' + unitPrice.toFixed(2) + '</td>' +
+                '</tr>';
+              }).join('');
+
+              const shipBtn = document.getElementById('ship-btn');
+              const fulfillBtn = document.getElementById('fulfill-btn');
+              const undoBtn = document.getElementById('undo-fulfill-btn');
+              const labelLink = document.getElementById('label-link');
+
+              const isFulfilled = Boolean(o.fulfilledAt || o.fulfilled_at || fulfillmentStatus === 'fulfilled' || fulfillmentStatus === 'shipped');
+              const isShipped = Boolean(o.shippedAt || o.shipped_at || fulfillmentStatus === 'shipped');
+
+              if (shipBtn) {
+                if (trackingNumber) {
+                  shipBtn.style.display = 'none';
+                } else {
+                  shipBtn.style.display = 'block';
+                  shipBtn.disabled = false;
+                  shipBtn.textContent = 'Create Shipping Label';
+                }
+              }
+
+              if (labelLink) {
+                labelLink.innerHTML = labelUrl ? \`<a href="\${labelUrl}" target="_blank">Download Label</a>\` : '';
+              }
+
+              if (fulfillBtn) {
+                if (isFulfilled) {
+                  fulfillBtn.style.display = 'none';
+                } else {
+                  fulfillBtn.style.display = 'block';
+                  fulfillBtn.disabled = false;
+                  fulfillBtn.textContent = 'Mark as Fulfilled';
+                }
+              }
+
+              if (undoBtn) {
+                if (isFulfilled && !isShipped) {
+                  undoBtn.style.display = 'block';
+                  undoBtn.disabled = false;
+                  undoBtn.textContent = 'Undo Fulfillment';
+                } else {
+                  undoBtn.style.display = 'none';
+                }
               }
             });
         }
         
         function createLabel() {
           const btn = document.getElementById('ship-btn');
+          if (!btn) return;
           btn.disabled = true;
           btn.textContent = 'Generating...';
           
@@ -354,11 +726,60 @@ function generateOrderDetailPage(req: any) {
                 btn.style.display = 'none';
                 document.getElementById('tracking').textContent = res.trackingNumber;
                 document.getElementById('label-link').innerHTML = \`<a href="\${res.labelUrl}" target="_blank">Download Label</a>\`;
+                load();
               } else {
                 alert('Error: ' + (res.error || 'Failed'));
                 btn.disabled = false;
                 btn.textContent = 'Create Shipping Label';
               }
+            });
+        }
+
+        function fulfillOrder() {
+          const btn = document.getElementById('fulfill-btn');
+          if (!btn) return;
+          btn.disabled = true;
+          btn.textContent = 'Marking...';
+
+          fetch('/api/orders/' + id + '/fulfill' + session, { method: 'POST' })
+            .then(r => r.json())
+            .then(res => {
+              if (res.ok) {
+                load();
+              } else {
+                alert('Error: ' + (res.error || 'Failed'));
+                btn.disabled = false;
+                btn.textContent = 'Mark as Fulfilled';
+              }
+            })
+            .catch(() => {
+              alert('Unable to mark as fulfilled');
+              btn.disabled = false;
+              btn.textContent = 'Mark as Fulfilled';
+            });
+        }
+
+        function undoFulfill() {
+          const btn = document.getElementById('undo-fulfill-btn');
+          if (!btn) return;
+          btn.disabled = true;
+          btn.textContent = 'Reverting...';
+
+          fetch('/api/orders/' + id + '/undo-fulfill' + session, { method: 'POST' })
+            .then(r => r.json())
+            .then(res => {
+              if (res.ok) {
+                load();
+              } else {
+                alert('Error: ' + (res.error || 'Failed'));
+                btn.disabled = false;
+                btn.textContent = 'Undo Fulfillment';
+              }
+            })
+            .catch(() => {
+              alert('Unable to undo fulfillment');
+              btn.disabled = false;
+              btn.textContent = 'Undo Fulfillment';
             });
         }
         

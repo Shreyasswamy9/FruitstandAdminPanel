@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import prisma from './config/database';
 import axios from 'axios';
 import { createServer } from 'net';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 // Page route registrars
 import { registerOrdersRoutes } from './pages/orders';
@@ -126,8 +128,17 @@ app.get('/auth/callback', async (req: any, res: any) => {
       if ((prisma as any).users) {
         user = await (prisma as any).users.upsert({
           where: { email },
-          update: { name: ms.displayName },
-          create: { email, name: ms.displayName, password: 'oauth' }
+          update: {
+            raw_user_meta_data: { name: ms.displayName } as Prisma.InputJsonValue,
+            updated_at: new Date(),
+          },
+          create: {
+            id: randomUUID(),
+            email,
+            raw_user_meta_data: { name: ms.displayName } as Prisma.InputJsonValue,
+            created_at: new Date(),
+            updated_at: new Date(),
+          }
         });
       }
     } catch { }

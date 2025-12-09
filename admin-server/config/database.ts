@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -30,9 +31,12 @@ async function createDefaultUser() {
       if (!existingUser) {
         await (prisma as any).users.create({
           data: {
-            name: 'Shreyas',
+            id: randomUUID(),
             email: 'shreyas@fruitstandny.com',
-            password: 'admin123'
+            encrypted_password: await import('bcryptjs').then(m => m.hash('admin123', 10)),
+            raw_user_meta_data: { name: 'Shreyas' } as Prisma.InputJsonValue,
+            created_at: new Date(),
+            updated_at: new Date()
           }
         });
         console.log('✅ Default admin user created - Email: shreyas@fruitstandny.com, Password: admin123');

@@ -1,33 +1,59 @@
-import { PrismaClient } from '@prisma/client';
-import { User } from '../types/user.types';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { prisma } from '../utils/prisma';
 
-const prisma = new PrismaClient();
+export const createUser = async (userData: { email: string; name?: string; phone?: string }) => {
+    const data: Prisma.usersCreateInput = {
+        id: randomUUID(),
+        email: userData.email,
+        created_at: new Date(),
+        updated_at: new Date(),
+    };
 
-export const createUser = async (userData: User) => {
-    return await prisma.user.create({
-        data: userData,
-    });
+    if (userData.name) {
+        data.raw_user_meta_data = { name: userData.name } as Prisma.InputJsonValue;
+    }
+
+    if (userData.phone) {
+        data.phone = userData.phone;
+    }
+
+    return prisma.users.create({ data });
 };
 
-export const getUserById = async (id: number) => {
-    return await prisma.user.findUnique({
+export const getUserById = async (id: string) => {
+    return prisma.users.findUnique({
         where: { id },
     });
 };
 
 export const getAllUsers = async () => {
-    return await prisma.user.findMany();
+    return prisma.users.findMany();
 };
 
-export const updateUser = async (id: number, userData: Partial<User>) => {
-    return await prisma.user.update({
+export const updateUser = async (id: string, userData: Partial<{ email: string; name: string; phone: string }>) => {
+    const data: Prisma.usersUpdateInput = {};
+
+    if (userData.email) {
+        data.email = userData.email;
+    }
+
+    if (userData.phone) {
+        data.phone = userData.phone;
+    }
+
+    if (userData.name) {
+        data.raw_user_meta_data = { name: userData.name } as Prisma.InputJsonValue;
+    }
+
+    return prisma.users.update({
         where: { id },
-        data: userData,
+        data,
     });
 };
 
-export const deleteUser = async (id: number) => {
-    return await prisma.user.delete({
+export const deleteUser = async (id: string) => {
+    return prisma.users.delete({
         where: { id },
     });
 };

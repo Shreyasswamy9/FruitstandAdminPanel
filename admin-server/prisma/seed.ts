@@ -1,58 +1,100 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 
 async function main() {
-    // Seed Users
-    const user1 = await prisma.user.create({
+    const now = new Date();
+
+    const user1 = await prisma.users.create({
         data: {
+            id: randomUUID(),
             email: 'user1@example.com',
-            name: 'User One',
+            raw_user_meta_data: { name: 'User One' },
+            created_at: now,
+            updated_at: now,
         },
     });
 
-    const user2 = await prisma.user.create({
+    const user2 = await prisma.users.create({
         data: {
+            id: randomUUID(),
             email: 'user2@example.com',
-            name: 'User Two',
+            raw_user_meta_data: { name: 'User Two' },
+            created_at: now,
+            updated_at: now,
         },
     });
 
-    // Seed Products
-    const product1 = await prisma.product.create({
+    const product1 = await prisma.products.create({
         data: {
             name: 'Product One',
-            price: 100,
+            slug: 'product-one',
+            price: new Prisma.Decimal('100.00'),
             description: 'Description for Product One',
+            image_url: 'https://via.placeholder.com/300?text=Product+One',
         },
     });
 
-    const product2 = await prisma.product.create({
+    const product2 = await prisma.products.create({
         data: {
             name: 'Product Two',
-            price: 200,
+            slug: 'product-two',
+            price: new Prisma.Decimal('200.00'),
             description: 'Description for Product Two',
+            image_url: 'https://via.placeholder.com/300?text=Product+Two',
         },
     });
 
-    // Seed Orders
-    await prisma.order.create({
+    const order1 = await prisma.orders.create({
         data: {
-            userId: user1.id,
-            productId: product1.id,
-            quantity: 1,
+            customer: { connect: { id: user1.id } },
+            order_number: `FS-${Date.now()}-1`,
+            total_amount: new Prisma.Decimal('100.00'),
+            subtotal: new Prisma.Decimal('100.00'),
+            tax_amount: new Prisma.Decimal('0'),
+            shipping_amount: new Prisma.Decimal('0'),
+            discount_amount: new Prisma.Decimal('0'),
+            status: 'pending',
+            payment_status: 'pending',
+            shipping_name: 'User One',
+            shipping_email: user1.email ?? 'user1@example.com',
+            shipping_address_line1: '123 Orchard Road',
+            shipping_city: 'New York',
+            shipping_state: 'NY',
+            shipping_postal_code: '10001',
+            shipping_country: 'US',
+            shipping_phone: '1234567890',
         },
     });
 
-    await prisma.order.create({
+    const order2 = await prisma.orders.create({
         data: {
-            userId: user2.id,
-            productId: product2.id,
-            quantity: 2,
+            customer: { connect: { id: user2.id } },
+            fulfilled_by: { connect: { id: user2.id } },
+            order_number: `FS-${Date.now()}-2`,
+            total_amount: new Prisma.Decimal('200.00'),
+            subtotal: new Prisma.Decimal('200.00'),
+            tax_amount: new Prisma.Decimal('0'),
+            shipping_amount: new Prisma.Decimal('0'),
+            discount_amount: new Prisma.Decimal('0'),
+            status: 'fulfilled',
+            payment_status: 'paid',
+            shipping_name: 'User Two',
+            shipping_email: user2.email ?? 'user2@example.com',
+            shipping_address_line1: '456 Market Street',
+            shipping_city: 'San Francisco',
+            shipping_state: 'CA',
+            shipping_postal_code: '94105',
+            shipping_country: 'US',
+            shipping_phone: '9876543210',
+            fulfilled_at: now,
+            fulfilled_by_name: 'User Two',
+            shipped_at: now,
         },
     });
 
-    console.log({ user1, user2, product1, product2 });
+    console.log({ user1, user2, product1, product2, order1, order2 });
 }
 
 main()
