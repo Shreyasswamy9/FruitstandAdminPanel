@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run from project root: bash admin-server/scripts/init-db.sh
-echo "Initializing Prisma schema (prisma db push)..."
-cd "$(dirname "$0")/.."
-# Ensure node_modules/bin available (use npx to be safe)
-npx prisma generate
-npx prisma db push --accept-data-loss
-echo "Prisma schema pushed. Prisma client generated."
+REPO_ROOT="/Users/shreyasswamy/Desktop/FruitstandAdminPanel"
+
+cd "$REPO_ROOT"
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Working tree has uncommitted changes. Please commit or stash before running init-db."
+  git status --short
+  exit 1
+fi
+
+git remote prune origin
+git fetch --force origin main
+
+git branch --force main origin/main
+git checkout main
+
+git status --short --branch
