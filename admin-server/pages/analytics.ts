@@ -123,11 +123,13 @@ export function registerAnalyticsRoutes(app: any, { requireAuth }: any) {
 
 export function generateAnalyticsPage(req: any) {
   const sessionSuffix = req?.query?.session ? `?session=${encodeURIComponent(String(req.query.session))}` : '';
+  // Analytics page head + responsive CSS
   return `
     <!DOCTYPE html>
     <html>
     <head>
       <title>Analytics Dashboard</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
       <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
         .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
@@ -153,6 +155,18 @@ export function generateAnalyticsPage(req: any) {
         .conversion-table th, .conversion-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
         .conversion-table th { background: #f8f9fa; font-weight: bold; }
         .muted { color: #6c757d; font-size: 12px; }
+
+        @media (max-width: 900px) {
+          .header { flex-direction: column; gap: 12px; align-items: flex-start; }
+          .analytics-grid { grid-template-columns: 1fr; }
+          .analytics-card { padding: 16px; }
+        }
+        @media (max-width: 600px) {
+          .main-content { padding: 20px 16px; }
+          .metric { flex-direction: column; align-items: flex-start; gap: 6px; }
+          .card-title { font-size: 16px; }
+          .conversion-table { font-size: 13px; overflow-x: auto; display: block; }
+        }
       </style>
     </head>
     <body>

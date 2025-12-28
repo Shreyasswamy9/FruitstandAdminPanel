@@ -327,6 +327,7 @@ export function generateOrdersPage(req: any) {
     <html>
     <head>
       <title>Orders Management</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
       <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
         .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
@@ -347,6 +348,22 @@ export function generateOrdersPage(req: any) {
         .center { text-align: center; padding: 30px; color: #666; }
         .small { font-size: 12px; color: #555; }
         .pi { font-family: monospace; }
+
+        @media (max-width: 900px) {
+          .orders-container { margin: 12px -16px; border-radius: 0; box-shadow: none; }
+          .orders-table { width: 100%; border-spacing: 0; }
+          .orders-table thead { display: none; }
+          .orders-table tbody { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+          .orders-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); cursor: pointer; }
+          .orders-table td { border-bottom: none; padding: 4px 0; font-size: 14px; }
+          .orders-table td[data-label]::before { content: attr(data-label); display: block; font-weight: 600; color: #6c757d; margin-bottom: 4px; }
+          .orders-table td:last-child { grid-column: 1 / -1; text-align: left; }
+        }
+        @media (max-width: 480px) {
+          .note { font-size: 12px; }
+          .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+          .header button { width: 100%; }
+        }
       </style>
     </head>
     <body>
@@ -416,17 +433,14 @@ export function generateOrdersPage(req: any) {
 
               // ensure sessionSuffix appended to links so back/forward keeps session
               return \`
-                <tr>
-                  <td><a href="/orders/\${encodeURIComponent(o.id)}\${sess}"><strong>\${o.id}</strong></a></td>
-                  <td>\${o.order_number || '-'}</td>
-                  <td>\${total}</td>
-                  <td><span class="status-chip status-\${statusKey}">\${statusLabel}</span></td>
-                  <td class="pi">\${piId ? \`\${piShort}\` : '-'}</td>
-                  <td>\${o.customer?.email || '-'}</td>
-                  <td>\${created}</td>
-                  <td class="small">
-                    \${piId ? \`<a href="https://dashboard.stripe.com/\${location.hostname.includes('localhost') || location.hostname.endsWith('.ngrok-free.dev') ? 'test/' : ''}payments/\${piId}" target="_blank" rel="noopener">View in Stripe ↗</a>\` : '<span class="muted">No PI</span>'}
-                  </td>
+                <tr onclick="location.href='/orders/\${o.id}${sessionSuffix}'">
+                  <td data-label="Order">\${o.order_number || ('#' + o.id.slice(-6))}</td>
+                  <td data-label="Customer">\${o.customer?.email || '—'}</td>
+                  <td data-label="Total">\${total}</td>
+                  <td data-label="Status"><span class="status-chip status-\${statusKey}">\${statusLabel}</span></td>
+                  <td data-label="Payment">\${piId ? \`\${piShort}\` : '-'}</td>
+                  <td data-label="Created">\${created}</td>
+                  <td data-label="Stripe">\${piId ? \`<a href="https://dashboard.stripe.com/\${location.hostname.includes('localhost') || location.hostname.endsWith('.ngrok-free.dev') ? 'test/' : ''}payments/\${piId}" target="_blank" rel="noopener">View in Stripe ↗</a>\` : '<span class="muted">No PI</span>'}</td>
                 </tr>\`;
             }).join('');
           } catch (e) {
@@ -451,6 +465,7 @@ export function generateOrderDetailPage(req: any) {
 <html>
 <head>
   <title>Order ${id}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
     .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
@@ -480,6 +495,19 @@ export function generateOrderDetailPage(req: any) {
     .kv dt { font-weight: 600; }
     .kv dd { margin: 0 0 8px 0; }
     .notice { padding: 10px; border-radius: 6px; background: #fff3cd; color: #856404; margin-top: 8px; }
+
+    @media (max-width: 900px) {
+      .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .actions { flex-wrap: wrap; justify-content: flex-start; }
+      .actions .btn { flex: 1 1 45%; min-width: 150px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .main { padding: 16px; }
+      .card { padding: 16px; }
+      table { display: block; overflow-x: auto; }
+      th, td { white-space: nowrap; }
+    }
   </style>
 </head>
 <body>

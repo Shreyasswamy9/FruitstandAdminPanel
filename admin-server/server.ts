@@ -98,11 +98,19 @@ app.get('/', (req: any, res: any) => {
     `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/authorize?client_id=${process.env.AZURE_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(process.env.AZURE_REDIRECT_URI!)}&scope=openid%20profile%20email%20User.Read&response_mode=query`;
   res.send(`
     <!DOCTYPE html><html><head><title>Login</title>
-    <style>body{font-family:Arial;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#667eea;color:#333}
-    .box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 8px 25px rgba(0,0,0,.15);width:360px;text-align:center}
-    a.btn{display:block;background:#0078d4;color:#fff;padding:14px;border-radius:6px;text-decoration:none;margin-top:15px}
-    a.btn.dev{background:#6c757d}
-    .err{background:#f8d7da;color:#721c24;padding:10px;border-radius:6px;font-size:13px;margin-bottom:10px}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body{font-family:Arial;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#667eea;color:#333}
+      .box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 8px 25px rgba(0,0,0,.15);width:360px;text-align:center}
+      a.btn{display:block;background:#0078d4;color:#fff;padding:14px;border-radius:6px;text-decoration:none;margin-top:15px}
+      a.btn.dev{background:#6c757d}
+      .err{background:#f8d7da;color:#721c24;padding:10px;border-radius:6px;font-size:13px;margin-bottom:10px}
+      @media (max-width: 600px) {
+        body { padding: 16px; }
+        .box { width: 100%; max-width: 420px; padding: 28px 20px; }
+        h1 { font-size: 26px; }
+        a.btn { font-size: 14px; padding: 12px; }
+      }
     </style></head><body>
     <div class="box">
       <h1>🍎 Admin Panel</h1>
@@ -160,12 +168,19 @@ app.get('/dev-login', (req: any, res: any) => {
   const err = typeof req.query.error === 'string' ? req.query.error : '';
   res.send(`
     <!DOCTYPE html><html><head><title>Dev Login</title>
-    <style>body{font-family:Arial;background:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh}
-    .box{background:#fff;padding:30px;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,.1);width:340px}
-    .err{background:#f8d7da;color:#721c24;padding:8px;border-radius:6px;font-size:12px;margin-bottom:8px}
-    input,button{width:100%;padding:10px;margin-top:10px;border-radius:6px;border:1px solid #ccc}
-    button{background:#6c757d;color:#fff;border:none;cursor:pointer}
-    a{display:block;margin-top:10px;font-size:12px;text-decoration:none;color:#0078d4}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body{font-family:Arial;background:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh}
+      .box{background:#fff;padding:30px;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,.1);width:340px}
+      .err{background:#f8d7da;color:#721c24;padding:8px;border-radius:6px;font-size:12px;margin-bottom:8px}
+      input,button{width:100%;padding:10px;margin-top:10px;border-radius:6px;border:1px solid #ccc}
+      button{background:#6c757d;color:#fff;border:none;cursor:pointer}
+      a{display:block;margin-top:10px;font-size:12px;text-decoration:none;color:#0078d4}
+      @media (max-width: 600px) {
+        body { padding: 16px; }
+        .box { width: 100%; max-width: 420px; padding: 24px 20px; }
+        input,button { font-size: 14px; }
+      }
     </style></head><body>
     <div class="box">
       <h2>🛠️ Dev Login</h2>
@@ -196,6 +211,7 @@ app.get('/dashboard', requireAuth, (req: any, res: any) => {
   const isAdmin = user.email === 'shreyas@fruitstandny.com' || user.email.toLowerCase().includes('shreyas') || user.email === process.env.ADMIN_EMAIL;
   res.send(`
     <!DOCTYPE html><html><head><title>Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body{font-family:Arial;margin:0;background:#f5f5f5}
       .header{background:#667eea;color:#fff;padding:18px;display:flex;justify-content:space-between;align-items:center}
@@ -204,6 +220,16 @@ app.get('/dashboard', requireAuth, (req: any, res: any) => {
       .card:hover{box-shadow:0 6px 18px rgba(0,0,0,.12);transform:translateY(-2px)}
       .icon{font-size:26px} .title{font-weight:600;margin:6px 0 4px;font-size:15px} .desc{font-size:12px;color:#666}
       .logout{background:#dc3545;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer}
+      @media (max-width: 768px) {
+        .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+        .header div:last-child { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .grid { grid-template-columns: 1fr; }
+        .card { padding: 14px; }
+      }
+      @media (max-width: 480px) {
+        body { padding: 0 12px; }
+        .logout { width: 100%; }
+      }
     </style></head><body>
     <div class="header">
       <div>🍎 Admin Panel</div>
