@@ -36,6 +36,10 @@ logs/
 # Databases
 *.sqlite
 *.db
+# Archives
+*.zip
+*.tar.gz
+*.rar
 # Supabase (local tooling caches)
 .supabase/
 supabase/.branches
