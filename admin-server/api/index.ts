@@ -1,4 +1,5 @@
-import { createAdminApp } from "../admin-server/src/adminApp";
+import "dotenv/config";
+import { createAdminApp } from "../src/adminApp";
 
 const app = createAdminApp();
 

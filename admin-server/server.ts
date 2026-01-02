@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createServer } from "net";
 import { createAdminApp } from "./src/adminApp";
 

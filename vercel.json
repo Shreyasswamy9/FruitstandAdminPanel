@@ -1,11 +1,3 @@
 {
-  "installCommand": "npm install --prefix admin-server --include=dev",
-  "buildCommand": "cd admin-server && npx prisma generate && npm run build",
-  "outputDirectory": "admin-server/dist",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index"
-    }
-  ]
+  "root": "admin-server"
 }

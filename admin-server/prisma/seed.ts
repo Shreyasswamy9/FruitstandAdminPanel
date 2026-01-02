@@ -6,6 +6,27 @@ const prisma = new PrismaClient();
 async function main() {
     const now = new Date();
 
+    // Create default admin user if it doesn't exist
+    const adminEmail = process.env.ADMIN_EMAIL || 'shreyas@fruitstandny.com';
+    const existingAdmin = await prisma.users.findFirst({
+        where: { email: adminEmail }
+    });
+
+    if (!existingAdmin) {
+        await prisma.users.create({
+            data: {
+                id: randomUUID(),
+                email: adminEmail,
+                raw_user_meta_data: { name: 'Admin User' },
+                created_at: now,
+                updated_at: now,
+            },
+        });
+        console.log(`✅ Default admin user created - Email: ${adminEmail}`);
+    } else {
+        console.log(`ℹ️  Admin user already exists: ${adminEmail}`);
+    }
+
     const user1 = await prisma.users.create({
         data: {
             id: randomUUID(),

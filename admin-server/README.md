@@ -31,11 +31,18 @@ The `admin-server` project is a TypeScript and Node.js application that provides
 
 3. Set up your environment variables:
    - Copy the `.env.example` to `.env` and fill in the required values.
+   - See the **Environment Variables** section below for all required vars.
 
 ### Running the Development Server
 To start the development server, run:
 ```
 npm run dev
+```
+
+### Seeding the Database
+To populate the database with default seed data (including admin user), run:
+```
+npm run db:seed
 ```
 
 ### Building the Project
@@ -60,7 +67,7 @@ npm run prisma:migrate
 ```
 admin-server
 ├── src
-│   ├── app.ts
+│   ├── adminApp.ts
 │   ├── controllers
 │   ├── routes
 │   ├── middleware
@@ -68,8 +75,16 @@ admin-server
 │   ├── jobs
 │   ├── types
 │   └── utils
+├── api
+│   └── index.ts (Vercel serverless entry point)
+├── pages
+│   ├── orders.ts
+│   ├── products.ts
+│   ├── analytics.ts
+│   └── ...
 ├── prisma
 │   ├── schema.prisma
+│   ├── migrations/
 │   └── seed.ts
 ├── config
 │   └── database.ts
@@ -77,9 +92,54 @@ admin-server
 ├── .gitignore
 ├── package.json
 ├── tsconfig.json
-├── ecosystem.config.js
+├── vercel.json
 └── README.md
 ```
+
+## Environment Variables
+
+The following environment variables are **required** for the application to work:
+
+### Database
+- `DIRECT_URL` - Postgres connection string (from Supabase)
+- `DATABASE_URL` - (Optional) Alias for DIRECT_URL if needed
+
+### Azure OAuth
+- `AZURE_CLIENT_ID` - Microsoft Azure application ID
+- `AZURE_CLIENT_SECRET` - Microsoft Azure application secret
+- `AZURE_TENANT_ID` - Microsoft Azure tenant ID
+- `AZURE_REDIRECT_URI` - OAuth callback redirect URI (e.g., `https://yourdomain.com/auth/callback`)
+
+### Authentication & Security
+- `ADMIN_SESSION_SECRET` - Secret key for signing JWT tokens (use a strong random string, min 32 chars)
+
+### Admin Configuration
+- `ADMIN_EMAIL` - Email address of the admin user (optional, defaults to `shreyas@fruitstandny.com`)
+
+### Developer Login (Optional)
+- `ENABLE_DEV_LOGIN` - Set to `"true"` to enable developer login endpoint
+- `DEV_ADMIN_PASSWORD` - Password for developer login (only used if `ENABLE_DEV_LOGIN=true`)
+
+### Environment
+- `NODE_ENV` - Set to `"production"` for production deployments (automatically set by Vercel)
+
+## Vercel Deployment
+
+### Setup
+1. Set the **Root Directory** to `admin-server` in Vercel project settings
+2. Ensure all environment variables from the **Environment Variables** section above are set in Vercel project settings
+3. The build command and function configuration are defined in `admin-server/vercel.json`
+
+### Build Process
+- `npm run build` runs: `prisma generate && tsc`
+- Compiles TypeScript to `dist/` directory
+- Vercel routes all requests to `/api/index` (the serverless function)
+
+### Cookie-Based Sessions
+- Authentication uses HttpOnly cookies with JWT tokens
+- Cookie name: `fs_admin`
+- Token expiration: 24 hours
+- Secure flag is enabled in production
 
 ## License
 This project is licensed under the MIT License. See the LICENSE file for details.
