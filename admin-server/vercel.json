@@ -1,11 +1,15 @@
 {
+  "version": 2,
   "buildCommand": "npx prisma generate && npm run build",
   "functions": {
     "api/index.ts": {
       "runtime": "@vercel/node@3.2.14"
     }
   },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/index"
+    }
   ]
 }
