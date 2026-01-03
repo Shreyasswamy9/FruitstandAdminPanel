@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Admin panel server for Fruitstand",
   "main": "server.ts",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "tsx watch server.ts",
     "start": "node dist/server.js",
