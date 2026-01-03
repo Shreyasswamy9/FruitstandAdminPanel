@@ -83,7 +83,7 @@ export function createAdminApp(): express.Express {
 
 			const secret = getJwtSecret();
 			const verified = await jose.jwtVerify(token, secret);
-			req.user = verified.payload as UserPayload;
+			req.user = verified.payload as unknown as UserPayload;
 
 			logActivity(req.user.id, req.user.email, "PAGE_ACCESS", {
 				page: req.path,
