@@ -123,6 +123,11 @@ The following environment variables are **required** for the application to work
 ### Environment
 - `NODE_ENV` - Set to `"production"` for production deployments (automatically set by Vercel)
 
+### PostHog Analytics (Optional)
+- `POSTHOG_API_KEY` - Personal API key from PostHog settings
+- `POSTHOG_PROJECT_ID` - Project ID from PostHog project settings
+- `POSTHOG_HOST` - (Optional) PostHog host URL, defaults to `https://app.posthog.com`
+
 ## Vercel Deployment
 
 ### Setup

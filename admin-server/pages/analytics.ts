@@ -109,7 +109,6 @@ export function registerAnalyticsRoutes(app: any, { requireAuth }: any) {
   app.get('/api/analytics/tiktok', requireAuth, async (_req: any, res: any) => {
     const pixelId = process.env.TIKTOK_PIXEL_ID || null;
     const token = process.env.TIKTOK_ACCESS_TOKEN || null;
-    // Optional TODO: Call TikTok Business API if token is available
     res.json({
       status: pixelId ? 'active' : 'inactive',
       pixelId,
@@ -118,6 +117,64 @@ export function registerAnalyticsRoutes(app: any, { requireAuth }: any) {
       addToCart24h: null,
       purchases24h: null
     });
+  });
+
+  // PostHog status & basic metrics
+  app.get('/api/analytics/posthog', requireAuth, async (_req: any, res: any) => {
+    const apiKey = process.env.POSTHOG_API_KEY;
+    const projectId = process.env.POSTHOG_PROJECT_ID;
+    const host = process.env.POSTHOG_HOST || 'https://app.posthog.com';
+
+    if (!apiKey || !projectId) {
+      return res.json({
+        status: 'inactive',
+        projectId: projectId || null,
+        events24h: null,
+        pageviews24h: null,
+        persons24h: null
+      });
+    }
+
+    try {
+      // Query events in the last 24h using HogQL or Trends API
+      // For simplicity and robustness, we use the Trends API via the Query endpoint
+      const response = await axios.post(
+        `${host}/api/projects/${projectId}/query/`,
+        {
+          query: {
+            kind: 'TrendsQuery',
+            date_from: '-24h',
+            series: [
+              { kind: 'EventsQuery', event: '$pageview', name: 'Pageviews', math: 'total' },
+              { kind: 'EventsQuery', event: null, name: 'Total Events', math: 'total' },
+              { kind: 'EventsQuery', event: null, name: 'Unique Users', math: 'dau' }
+            ]
+          }
+        },
+        {
+          headers: { Authorization: `Bearer ${apiKey}` }
+        }
+      );
+
+      const results = response.data?.results || [];
+
+      res.json({
+        status: 'active',
+        projectId,
+        pageviews24h: results[0]?.count || 0,
+        events24h: results[1]?.count || 0,
+        persons24h: results[2]?.count || 0
+      });
+    } catch (e: any) {
+      console.error('PostHog API Error:', e.response?.data || e.message);
+      res.json({
+        status: 'inactive',
+        projectId,
+        events24h: null,
+        pageviews24h: null,
+        persons24h: null
+      });
+    }
   });
 }
 
@@ -259,6 +316,30 @@ export function generateAnalyticsPage(req: any) {
             </div>
           </div>
 
+          <!-- PostHog Card -->
+          <div class="analytics-card">
+            <div class="card-title">
+              🦔 PostHog Analytics
+              <span class="pixel-status" id="posthog-status">Checking...</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Project ID:</span>
+              <span class="metric-value" id="posthog-project-id">Loading...</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Events (24h):</span>
+              <span class="metric-value" id="posthog-events">Loading...</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Page Views:</span>
+              <span class="metric-value" id="posthog-pageviews">Loading...</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Unique Users:</span>
+              <span class="metric-value" id="posthog-persons">Loading...</span>
+            </div>
+          </div>
+
           <!-- Conversion Tracking Card -->
           <div class="analytics-card">
             <div class="card-title">
@@ -297,8 +378,12 @@ export function generateAnalyticsPage(req: any) {
                 TikTok Pixel
                 <span class="pixel-status" id="tiktok-active-pill">Checking...</span>
               </li>
+              <li>
+                PostHog Analytics
+                <span class="pixel-status" id="posthog-active-pill">Checking...</span>
+              </li>
             </ul>
-            <div class="muted">Configure .env: GTM_CONTAINER_ID, META_PIXEL_ID, META_ACCESS_TOKEN, TIKTOK_PIXEL_ID, TIKTOK_ACCESS_TOKEN</div>
+            <div class="muted">Configure .env: GTM_CONTAINER_ID, META_PIXEL_ID, META_ACCESS_TOKEN, TIKTOK_PIXEL_ID, TIKTOK_ACCESS_TOKEN, POSTHOG_API_KEY, POSTHOG_PROJECT_ID</div>
           </div>
         </div>
       </div>
@@ -315,7 +400,7 @@ export function generateAnalyticsPage(req: any) {
         async function refreshData() {
           document.getElementById('loading').style.display = 'flex';
           try {
-            await Promise.all([loadGTM(), loadMeta(), loadTikTok()]);
+            await Promise.all([loadGTM(), loadMeta(), loadTikTok(), loadPostHog()]);
           } finally {
             document.getElementById('loading').style.display = 'none';
           }
@@ -368,6 +453,21 @@ export function generateAnalyticsPage(req: any) {
           setStatus('tiktok-active-pill', d.status);
           document.getElementById('tiktok-pixel-id').textContent = d.pixelId || 'Not configured';
           // Metrics remain N/A unless you wire TikTok Business API with access token
+        }
+
+        async function loadPostHog() {
+          try {
+            const r = await fetch('/api/analytics/posthog${sessionSuffix}');
+            const d = await r.json();
+            setStatus('posthog-status', d.status);
+            setStatus('posthog-active-pill', d.status);
+            document.getElementById('posthog-project-id').textContent = d.projectId || 'Not configured';
+            document.getElementById('posthog-events').textContent = d.events24h ?? 'N/A';
+            document.getElementById('posthog-pageviews').textContent = d.pageviews24h ?? 'N/A';
+            document.getElementById('posthog-persons').textContent = d.persons24h ?? 'N/A';
+          } catch (e) {
+            // Keep defaults
+          }
         }
 
         // Initial load
