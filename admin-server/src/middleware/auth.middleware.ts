@@ -14,3 +14,14 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
 
     next();
 };
+
+// Session-based auth middleware
+export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.session?.userId;
+
+    if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    next();
+};

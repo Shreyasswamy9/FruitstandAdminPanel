@@ -104,21 +104,12 @@ The following environment variables are **required** for the application to work
 - `DIRECT_URL` - Postgres connection string (from Supabase)
 - `DATABASE_URL` - (Optional) Alias for DIRECT_URL if needed
 
-### Azure OAuth
-- `AZURE_CLIENT_ID` - Microsoft Azure application ID
-- `AZURE_CLIENT_SECRET` - Microsoft Azure application secret
-- `AZURE_TENANT_ID` - Microsoft Azure tenant ID
-- `AZURE_REDIRECT_URI` - OAuth callback redirect URI (e.g., `https://yourdomain.com/auth/callback`)
-
 ### Authentication & Security
 - `ADMIN_SESSION_SECRET` - Secret key for signing JWT tokens (use a strong random string, min 32 chars)
+- `ADMIN_PASSWORD` - Password for admin login
 
 ### Admin Configuration
-- `ADMIN_EMAIL` - Email address of the admin user (optional, defaults to `shreyas@fruitstandny.com`)
-
-### Developer Login (Optional)
-- `ENABLE_DEV_LOGIN` - Set to `"true"` to enable developer login endpoint
-- `DEV_ADMIN_PASSWORD` - Password for developer login (only used if `ENABLE_DEV_LOGIN=true`)
+- `ADMIN_EMAIL` - Email address of the admin user (optional, defaults to `admin@fruitstandny.com`)
 
 ### Environment
 - `NODE_ENV` - Set to `"production"` for production deployments (automatically set by Vercel)

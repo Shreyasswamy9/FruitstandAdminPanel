@@ -28,7 +28,7 @@ cat > "$TMP_RULES" <<'RULES'
 # Replace known variable-based secrets by key
 regex:^STRIPE_SECRET_KEY=.*==>STRIPE_SECRET_KEY=<redacted>
 regex:^STRIPE_WEBHOOK_SECRET=.*==>STRIPE_WEBHOOK_SECRET=<redacted>
-regex:^AZURE_CLIENT_SECRET=.*==>AZURE_CLIENT_SECRET=<redacted>
+regex:^ADMIN_PASSWORD=.*==>ADMIN_PASSWORD=<redacted>
 regex:^SUPABASE_SERVICE_ROLE_KEY=.*==>SUPABASE_SERVICE_ROLE_KEY=<redacted>
 # Replace raw secret-looking tokens that may appear outside env files
 regex:sk_live_[0-9A-Za-z]+==><redacted>
@@ -61,7 +61,7 @@ cat <<'NEXT'
 Done.
 
 Important next steps:
-- Rotate any exposed secrets in their providers (Stripe Dashboard, Azure App Registration, Supabase).
+- Rotate any exposed secrets in their providers (Stripe Dashboard, Supabase).
 - Ensure admin-server/.env is git-ignored and never committed.
 - If collaborators pulled the old history, they must run:
     git fetch --all

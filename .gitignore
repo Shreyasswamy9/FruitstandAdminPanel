@@ -28,6 +28,12 @@ admin-server/.env.*
 # Logs
 logs/
 *.log
+# Credentials and sensitive files
+ADMIN_CREDENTIALS.md
+admin-server/ADMIN_CREDENTIALS.md
+scripts/credentials.json
+.credentials
+passwords-to-remove.txt
 # OS/editor
 .DS_Store
 .vscode/*
