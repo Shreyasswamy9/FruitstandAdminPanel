@@ -734,6 +734,35 @@ export function registerOrdersRoutes(
     }
   });
 
+  // API: Download shipping label (proxy through server)
+  app.get('/api/orders/:id/download-label', requireAuth, async (req: any, res: any) => {
+    try {
+      const id = req.params.id;
+      const order = await prisma.orders.findUnique({ where: { id } });
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (!order.label_url) return res.status(404).json({ error: 'No label available' });
+
+      // Fetch the PDF from Shippo
+      const labelResponse = await fetch(order.label_url);
+      if (!labelResponse.ok) {
+        return res.status(500).json({ error: 'Failed to fetch label' });
+      }
+
+      // Get the PDF content
+      const pdfBuffer = await labelResponse.arrayBuffer();
+
+      // Set headers to force download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="shipping-label-${order.tracking_number || id}.pdf"`);
+      res.setHeader('Content-Length', pdfBuffer.byteLength);
+
+      res.send(Buffer.from(pdfBuffer));
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: 'Download error: ' + e.message });
+    }
+  });
+
   // API: Send Shipping Email via Mailchimp
   app.post('/api/orders/:id/send-shipping-email', requireAuth, async (req: any, res: any) => {
     try {
@@ -1620,21 +1649,14 @@ function generateOrderDetailPage(req: any) {
 
         function downloadLabel(labelUrl) {
           if (!labelUrl) return;
-          fetch(labelUrl)
-            .then(response => response.blob())
-            .then(blob => {
-              const objectUrl = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = objectUrl;
-              link.download = 'shipping-label.pdf';
-              document.body.appendChild(link);
-              link.click();
-              link.remove();
-              URL.revokeObjectURL(objectUrl);
-            })
-            .catch(() => {
-              window.location.href = labelUrl;
-            });
+          // Use the server endpoint to download (better CORS handling and forced download)
+          const orderId = window.location.pathname.split('/').pop();
+          const link = document.createElement('a');
+          link.href = '/api/orders/' + orderId + '/download-label';
+          link.download = 'shipping-label.pdf';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
         }
 
         function createLabel() {
