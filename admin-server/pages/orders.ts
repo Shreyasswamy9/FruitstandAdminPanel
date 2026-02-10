@@ -1143,7 +1143,7 @@ function generateOrderDetailPage(req: any) {
 
             <div class="info-row"><div class="info-label">Payment</div><div id="p-status">-</div></div>
             <div class="info-row"><div class="info-label">Fulfillment</div><div id="o-status">-</div></div>
-            <div class="info-row"><div class="info-label">Tracking</div><div id="tracking">-</div></div>
+            <div class="info-row"><div class="info-label">Tracking ID</div><div id="tracking-container" style="display:flex;align-items:center;gap:8px"><code id="tracking" style="padding:4px 8px;background:#f5f5f5;border-radius:4px;font-family:monospace;font-size:12px;flex:1;word-break:break-all">-</code><button onclick="copyTracking()" style="padding:4px 8px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap;flex-shrink:0">Copy</button></div></div>
             <div class="status-flow" id="status-flow"></div>
           </div>
           
@@ -1352,6 +1352,21 @@ function generateOrderDetailPage(req: any) {
             color: info.color || fallback.color
           };
         };
+
+        function copyTracking() {
+          const trackingEl = document.getElementById('tracking');
+          const trackingText = trackingEl.textContent;
+          if (trackingText && trackingText !== '-') {
+            navigator.clipboard.writeText(trackingText).then(() => {
+              const btn = event.target;
+              const originalText = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(() => {
+                btn.textContent = originalText;
+              }, 2000);
+            });
+          }
+        }
 
         function load() {
           fetch('/api/orders/' + id + session)
