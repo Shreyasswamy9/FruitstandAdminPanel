@@ -866,10 +866,10 @@ export function registerOrdersRoutes(
       // Create shipment using individual address fields
       const shipment = await shippoClient.shipments.create({
         addressFrom: {
-          name: "Fruitstand NY",
-          street1: "37-30 Review Avenue",
+          name: "FRUITSTAND",
+          street1: "3730 Review Avenue",
           street2: "Ste 202",
-          city: "Long Island City",
+          city: "Long Island City,",
           state: "NY",
           zip: "11101",
           country: "US"
