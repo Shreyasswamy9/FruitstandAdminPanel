@@ -575,27 +575,37 @@ export function registerOrdersRoutes(
   app.post('/api/orders/:id/shipping-rates', requireAuth, async (req: any, res: any) => {
     try {
       const id = req.params.id;
-      if (!shippoClient) return res.status(500).json({ error: 'Shippo not configured' });
+      if (!shippoClient) {
+        console.error('Shippo client not initialized');
+        return res.status(500).json({ error: 'Shippo not configured' });
+      }
 
       const order = await prisma.orders.findUnique({ where: { id } });
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
       // Get package dimensions from request body, with defaults
-      const { length = "5", width = "5", height = "5", weight = "2" } = req.body;
+      const { length = "5", width = "5", height = "5", weight = "2", addressFrom } = req.body;
       const parsedWeight = Number.parseFloat(weight);
       const safeWeight = Number.isFinite(parsedWeight) ? Math.max(parsedWeight, 0.1).toFixed(2) : '0.1';
 
+      console.log('Shipping rates request:', { length, width, height, weight, addressFrom });
+
+      // Use custom address if provided, otherwise use default
+      const fromAddress = addressFrom || {
+        name: "Fruitstand",
+        street1: "37-30 Review Avenue",
+        street2: "Ste 202",
+        city: "Long Island City",
+        state: "NY",
+        zip: "11101",
+        country: "US"
+      };
+
       try {
+        console.log('Creating shipment with address:', fromAddress);
         // Create shipment using individual address fields
         const shipment = await shippoClient.shipments.create({
-          addressFrom: {
-            name: "Fruitstand NY",
-            street1: "123 Fruit Lane",
-            city: "New York",
-            state: "NY",
-            zip: "10001",
-            country: "US"
-          },
+          addressFrom: fromAddress,
           addressTo: {
             name: order.shipping_name || order.shipping_email,
             street1: order.shipping_address_line1,
@@ -618,7 +628,10 @@ export function registerOrdersRoutes(
           async: false
         });
 
+        console.log('Shipment created:', JSON.stringify(shipment, null, 2));
+
         if (!shipment.rates || shipment.rates.length === 0) {
+          console.error('No rates in shipment response');
           return res.status(400).json({ error: 'No rates found for this address' });
         }
 
@@ -635,6 +648,7 @@ export function registerOrdersRoutes(
         estimated_days: rate.estimatedDays || rate.estimated_days
       }));
 
+      console.log('Formatted rates:', formattedRates);
       return res.json({
         ok: true,
         rates: formattedRates,
@@ -647,8 +661,10 @@ export function registerOrdersRoutes(
         }
       });
       } catch (shippoError: any) {
-        console.error('Shippo API Error:', shippoError.message || shippoError);
-        return res.status(500).json({ error: 'Shippo API Error: ' + (shippoError.message || 'Unknown error') });
+        console.error('Shippo API Error:', shippoError);
+        console.error('Shippo error message:', shippoError.message);
+        console.error('Shippo error details:', shippoError.details || shippoError.response?.data);
+        return res.status(500).json({ error: 'Shippo API Error: ' + (shippoError.message || 'Unknown error'), details: shippoError.details });
       }
     } catch (e: any) {
       console.error('Shipping rates endpoint error:', e);
@@ -851,10 +867,11 @@ export function registerOrdersRoutes(
       const shipment = await shippoClient.shipments.create({
         addressFrom: {
           name: "Fruitstand NY",
-          street1: "123 Fruit Lane",
-          city: "New York",
+          street1: "37-30 Review Avenue",
+          street2: "Ste 202",
+          city: "Long Island City",
           state: "NY",
-          zip: "10001",
+          zip: "11101",
           country: "US"
         },
         addressTo: {
@@ -1281,6 +1298,45 @@ function generateOrderDetailPage(req: any) {
                 <option value="">Loading services...</option>
               </select>
             </div>
+
+            <div style="margin-bottom:16px;padding:12px;background:#f0f4ff;border-radius:8px;border-left:4px solid #667eea">
+              <label style="display:block;margin-bottom:10px;font-weight:bold;font-size:14px">📦 Return Address (Your Address)</label>
+              
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Name</label>
+                <input type="text" id="ship-name" value="Fruitstand NY" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Street 1</label>
+                <input type="text" id="ship-street1" value="37-30 Review Avenue" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Street 2 (Suite/Apt)</label>
+                <input type="text" id="ship-street2" value="Ste 202" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:10px">
+                <div>
+                  <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">City</label>
+                  <input type="text" id="ship-city" value="Long Island City" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                </div>
+                <div>
+                  <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">State</label>
+                  <input type="text" id="ship-state" value="NY" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                </div>
+              </div>
+
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">ZIP Code</label>
+                <input type="text" id="ship-zip" value="11101" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="font-size:12px;color:#4a5568;background:white;padding:8px;border-radius:4px;margin-top:8px">
+                ℹ️ Edit these fields if you need to use a different return address for this shipment
+              </div>
+            </div>
           </div>
 
           <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:16px;border-top:1px solid #eee;margin-top:16px">
@@ -1651,13 +1707,29 @@ function generateOrderDetailPage(req: any) {
           selectEl.innerHTML = '<option value="">Loading services...</option>';
           selectEl.disabled = true;
 
+          const addressFrom = {
+            name: document.getElementById('ship-name').value,
+            street1: document.getElementById('ship-street1').value,
+            street2: document.getElementById('ship-street2').value,
+            city: document.getElementById('ship-city').value,
+            state: document.getElementById('ship-state').value,
+            zip: document.getElementById('ship-zip').value,
+            country: 'US'
+          };
+
+          console.log('Loading rates with:', { length, width, height, weight, addressFrom });
+
           fetch('/api/orders/' + id + '/shipping-rates' + session, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ length, width, height, weight })
+            body: JSON.stringify({ length, width, height, weight, addressFrom })
           })
-            .then(r => r.json())
+            .then(r => {
+              console.log('Response status:', r.status);
+              return r.json();
+            })
             .then(res => {
+              console.log('Rates response:', res);
               if (res.ok && res.rates && res.rates.length > 0) {
                 selectEl.innerHTML = res.rates.map((rate, idx) => {
                   const label = \`\${rate.provider} - \${rate.servicelevel.name} ($\${parseFloat(rate.amount).toFixed(2)}) - \${rate.estimated_days || '?'} days\`;
@@ -1665,11 +1737,13 @@ function generateOrderDetailPage(req: any) {
                 }).join('');
                 selectEl.disabled = false;
               } else {
-                selectEl.innerHTML = '<option value="">Error loading services</option>';
+                const errorMsg = res.error || 'No rates available';
+                console.error('Rates error:', errorMsg);
+                selectEl.innerHTML = '<option value="">Error: ' + errorMsg + '</option>';
               }
             })
             .catch(err => {
-              console.error(err);
+              console.error('Fetch error:', err);
               selectEl.innerHTML = '<option value="">Error: ' + (err.message || 'Failed to load') + '</option>';
             });
         }
@@ -1685,10 +1759,23 @@ function generateOrderDetailPage(req: any) {
           btn.disabled = true;
           btn.textContent = 'Purchasing...';
 
+          const shipData = {
+            rateId,
+            labelFileType: 'PDF_4x6',
+            addressFrom: {
+              name: document.getElementById('ship-name').value,
+              street1: document.getElementById('ship-street1').value,
+              street2: document.getElementById('ship-street2').value,
+              city: document.getElementById('ship-city').value,
+              state: document.getElementById('ship-state').value,
+              zip: document.getElementById('ship-zip').value
+            }
+          };
+
           fetch('/api/orders/' + id + '/purchase-label' + session, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rateId, labelFileType: 'PDF_4x6' })
+            body: JSON.stringify(shipData)
           })
             .then(r => r.json())
             .then(res => {
