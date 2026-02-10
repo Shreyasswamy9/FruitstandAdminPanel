@@ -63,11 +63,29 @@ export async function generateReviewsPage(req: any, prisma: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Reviews Management</title>
       <script src="https://cdn.tailwindcss.com"></script>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
       <style>
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; }
+        header { position: sticky; top: 0; z-index: 100; }
+        .action-btn { min-height: 44px; touch-action: manipulation; }
+        .action-btn:active { opacity: 0.85; }
+        @media (max-width: 768px) {
+          main { padding: 1rem !important; }
+          header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+          table { font-size: 0.875rem; }
+          th, td { padding: 0.75rem !important; }
+        }
+        @media (max-width: 480px) {
+          header { padding: 0.75rem !important; }
+          main { padding: 0.75rem !important; }
+          table { font-size: 0.75rem; }
+          th, td { padding: 0.5rem !important; }
+          .px-4 { padding: 0.5rem !important; }
+          .py-2 { padding: 0.375rem !important; }
+        }
       </style>
     </head>
     <body>

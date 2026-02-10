@@ -184,32 +184,45 @@ export function generateAnalyticsPage(req: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Analytics Dashboard</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
-        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main-content { padding: 30px; max-width: 1400px; margin: 0 auto; }
-        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; }
-        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
-        .analytics-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .card-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-        .metric { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        .header { background: #667eea; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .main-content { padding: 16px; max-width: 1400px; margin: 0 auto; }
+        .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; cursor: pointer; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active { opacity: 0.85; }
+        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+        .analytics-card { background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .card-title { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .metric { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 14px; }
         .metric:last-child { border-bottom: none; }
         .metric-label { color: #666; }
         .metric-value { font-weight: bold; color: #333; }
         .metric-change { font-size: 12px; padding: 2px 6px; border-radius: 3px; }
         .positive { background: #d4edda; color: #155724; }
         .negative { background: #f8d7da; color: #721c24; }
-        .refresh-btn { background: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .refresh-btn { background: #28a745; color: white; padding: 12px 18px; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
+        .refresh-btn:active { opacity: 0.85; }
         .pixel-status { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
         .active { background: #d4edda; color: #155724; }
         .inactive { background: #f8d7da; color: #721c24; }
         .integration-list { list-style: none; padding: 0; }
-        .integration-list li { padding: 8px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        .conversion-table { width: 100%; margin-top: 15px; }
-        .conversion-table th, .conversion-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        .integration-list li { padding: 8px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+        .conversion-table { width: 100%; margin-top: 12px; }
+        .conversion-table th, .conversion-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #eee; font-size: 13px; }
         .conversion-table th { background: #f8f9fa; font-weight: bold; }
         .muted { color: #6c757d; font-size: 12px; }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .header h1 { font-size: 18px; }
+          .main-content { padding: 12px; }
+          .analytics-grid { gap: 12px; grid-template-columns: 1fr; }
+          .analytics-card { padding: 12px; }
+          .card-title { font-size: 14px; }
+          .conversion-table th, .conversion-table td { padding: 8px 6px; font-size: 12px; }
+        }
       </style>
     </head>
     <body>

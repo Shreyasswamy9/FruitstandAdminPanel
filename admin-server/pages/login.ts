@@ -20,6 +20,14 @@ router.get('/login', (req, res) => {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
         }
 
         body {
@@ -29,53 +37,57 @@ router.get('/login', (req, res) => {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
         }
 
         .login-container {
             background: white;
-            border-radius: 16px;
+            border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             width: 100%;
             max-width: 420px;
-            padding: 40px;
+            padding: 32px 24px;
         }
 
         .logo {
             text-align: center;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
 
         .logo h1 {
-            font-size: 28px;
+            font-size: 36px;
             color: #333;
             margin-bottom: 8px;
+            font-weight: 700;
         }
 
         .logo p {
             color: #666;
-            font-size: 14px;
+            font-size: 16px;
+            font-weight: 500;
         }
 
         .form-group {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
         label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-weight: 600;
             color: #333;
-            font-size: 14px;
+            font-size: 15px;
         }
 
         input {
             width: 100%;
-            padding: 12px 16px;
+            padding: 16px 14px;
             border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 16px;
             transition: border-color 0.3s;
+            -webkit-appearance: none;
+            appearance: none;
         }
 
         input:focus {
@@ -85,37 +97,36 @@ router.get('/login', (req, res) => {
 
         button {
             width: 100%;
-            padding: 14px;
+            padding: 18px 16px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
+            border-radius: 12px;
+            font-size: 18px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            transition: opacity 0.2s;
+            -webkit-appearance: none;
+            appearance: none;
+            min-height: 50px;
+            touch-action: manipulation;
         }
 
         button:active {
-            transform: translateY(0);
+            opacity: 0.85;
         }
 
         button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
         }
 
         .alert {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 24px;
-            font-size: 14px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            line-height: 1.5;
         }
 
         .alert-error {
@@ -132,13 +143,14 @@ router.get('/login', (req, res) => {
 
         .spinner {
             display: inline-block;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             border: 2px solid rgba(255,255,255,0.3);
             border-radius: 50%;
             border-top-color: white;
             animation: spin 0.8s linear infinite;
             margin-right: 8px;
+            vertical-align: middle;
         }
 
         @keyframes spin {
@@ -155,6 +167,52 @@ router.get('/login', (req, res) => {
 
         button:disabled .default-text {
             display: none;
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+            }
+
+            .login-container {
+                padding: 28px 20px;
+                border-radius: 16px;
+            }
+
+            .logo h1 {
+                font-size: 32px;
+            }
+
+            .logo p {
+                font-size: 15px;
+            }
+
+            .form-group {
+                margin-bottom: 18px;
+            }
+
+            label {
+                font-size: 14px;
+                margin-bottom: 9px;
+            }
+
+            input {
+                padding: 15px 13px;
+                font-size: 16px;
+                border-radius: 10px;
+            }
+
+            button {
+                padding: 16px 14px;
+                font-size: 16px;
+                min-height: 48px;
+                border-radius: 10px;
+            }
+
+            .alert {
+                padding: 12px 14px;
+                font-size: 14px;
+            }
         }
     </style>
 </head>
@@ -261,6 +319,14 @@ router.get('/change-password', (req, res) => {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
         }
 
         body {
@@ -270,67 +336,71 @@ router.get('/change-password', (req, res) => {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
         }
 
         .change-password-container {
             background: white;
-            border-radius: 16px;
+            border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             width: 100%;
             max-width: 420px;
-            padding: 40px;
+            padding: 32px 24px;
         }
 
         .logo {
             text-align: center;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
 
         .logo h1 {
-            font-size: 28px;
+            font-size: 36px;
             color: #333;
             margin-bottom: 8px;
+            font-weight: 700;
         }
 
         .logo p {
             color: #666;
-            font-size: 14px;
+            font-size: 16px;
+            font-weight: 500;
         }
 
         .info-box {
             background: #f0f4ff;
             border-left: 4px solid #667eea;
             padding: 16px;
-            margin-bottom: 24px;
-            border-radius: 8px;
+            margin-bottom: 20px;
+            border-radius: 12px;
         }
 
         .info-box p {
             color: #333;
-            font-size: 14px;
+            font-size: 15px;
             line-height: 1.6;
         }
 
         .form-group {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
         label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-weight: 600;
             color: #333;
-            font-size: 14px;
+            font-size: 15px;
         }
 
         input {
             width: 100%;
-            padding: 12px 16px;
+            padding: 16px 14px;
             border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 16px;
             transition: border-color 0.3s;
+            -webkit-appearance: none;
+            appearance: none;
         }
 
         input:focus {
@@ -339,44 +409,44 @@ router.get('/change-password', (req, res) => {
         }
 
         .password-requirements {
-            margin-top: 8px;
-            font-size: 12px;
+            margin-top: 10px;
+            font-size: 13px;
             color: #666;
+            line-height: 1.4;
         }
 
         button {
             width: 100%;
-            padding: 14px;
+            padding: 18px 16px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
+            border-radius: 12px;
+            font-size: 18px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            transition: opacity 0.2s;
+            -webkit-appearance: none;
+            appearance: none;
+            min-height: 50px;
+            touch-action: manipulation;
         }
 
         button:active {
-            transform: translateY(0);
+            opacity: 0.85;
         }
 
         button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
         }
 
         .alert {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 24px;
-            font-size: 14px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            line-height: 1.5;
         }
 
         .alert-error {
@@ -393,13 +463,14 @@ router.get('/change-password', (req, res) => {
 
         .spinner {
             display: inline-block;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             border: 2px solid rgba(255,255,255,0.3);
             border-radius: 50%;
             border-top-color: white;
             animation: spin 0.8s linear infinite;
             margin-right: 8px;
+            vertical-align: middle;
         }
 
         @keyframes spin {
@@ -416,6 +487,66 @@ router.get('/change-password', (req, res) => {
 
         button:disabled .default-text {
             display: none;
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+            }
+
+            .change-password-container {
+                padding: 28px 20px;
+                border-radius: 16px;
+            }
+
+            .logo h1 {
+                font-size: 32px;
+            }
+
+            .logo p {
+                font-size: 15px;
+            }
+
+            .info-box {
+                padding: 14px;
+                margin-bottom: 18px;
+            }
+
+            .info-box p {
+                font-size: 14px;
+            }
+
+            .form-group {
+                margin-bottom: 18px;
+            }
+
+            label {
+                font-size: 14px;
+                margin-bottom: 9px;
+            }
+
+            input {
+                padding: 15px 13px;
+                font-size: 16px;
+                border-radius: 10px;
+            }
+
+            .password-requirements {
+                font-size: 12px;
+                margin-top: 8px;
+            }
+
+            button {
+                padding: 16px 14px;
+                font-size: 16px;
+                min-height: 48px;
+                border-radius: 10px;
+            }
+
+            .alert {
+                padding: 12px 14px;
+                font-size: 14px;
+            }
         }
     </style>
 </head>

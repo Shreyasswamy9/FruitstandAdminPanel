@@ -191,6 +191,11 @@ export function registerOrdersRoutes(
           status: true,
           created_at: true,
           shipping_name: true,
+          shipping_address_line1: true,
+          shipping_address_line2: true,
+          shipping_city: true,
+          shipping_state: true,
+          shipping_postal_code: true,
           fulfilled_at: true,
           shipped_at: true,
           fulfilled_by_name: true,
@@ -206,6 +211,7 @@ export function registerOrdersRoutes(
         status: o.status,
         createdAt: o.created_at,
         receivedName: o.shipping_name,
+        shippingAddress: [o.shipping_address_line1, o.shipping_address_line2, o.shipping_city, o.shipping_state, o.shipping_postal_code].filter(Boolean).join(', '),
         fulfilledAt: o.fulfilled_at,
         fulfilledById: o.fulfilled_by_id,
         fulfilledByName: o.fulfilled_by_name,
@@ -950,18 +956,27 @@ function generateOrdersPage(req: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Orders</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
         * { box-sizing: border-box; }
-        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main { padding: 30px; max-width: 1200px; margin: 0 auto; }
-        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; }
-        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: #667eea; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 8px; }
+        .main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+        .search-container { margin-bottom: 16px; }
+        .search-input { width: 100%; padding: 12px 16px; font-size: 15px; border: 2px solid #e0e0e0; border-radius: 10px; -webkit-appearance: none; appearance: none; transition: border-color 0.3s; }
+        .search-input:focus { outline: none; border-color: #667eea; }
+        .search-info { margin-top: 8px; font-size: 13px; color: #666; }
+        .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active { opacity: 0.85; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
         th { background: #f8f9fa; font-weight: 600; }
-        tr:hover { background: #f8f9fa; cursor: pointer; }
+        tr:active { background: #f8f9fa; }
+        .order-cell { cursor: pointer; }
+        .customer-name { font-weight: 600; color: #333; margin-bottom: 4px; }
+        .customer-address { font-size: 12px; color: #666; line-height: 1.4; }
         .status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
         .status-paid { background: #c6f6d5; color: #276749; }
         .status-pending { background: #bee3f8; color: #2b6cb0; }
@@ -973,19 +988,35 @@ function generateOrdersPage(req: any) {
         .status-step.active .status-step-dot { background: #667eea; }
         .status-step-label { font-weight: 600; color: #2d3748; }
         .status-step-meta { font-size: 12px; color: #4a5568; }
+        .no-results { text-align: center; padding: 40px 20px; color: #999; }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .header h1 { font-size: 20px; margin: 0; }
+          .main { padding: 12px; }
+          table { font-size: 13px; }
+          th, td { padding: 10px 8px; }
+          .card { border-radius: 10px; }
+          .search-input { padding: 11px 14px; font-size: 14px; }
+        }
       </style>
     </head>
     <body>
       <div class="header">
-        <h1>📦 Orders</h1>
+        <h1 style="margin: 0;">📦 Orders</h1>
         <a href="/dashboard${req.query.session ? `?session=${req.query.session}` : ''}" class="back-btn">Back</a>
       </div>
       <div class="main">
+        <div class="search-container">
+          <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by order number, customer name, or address...">
+          <div class="search-info" id="searchInfo"></div>
+        </div>
         <div class="card">
           <table>
             <thead>
               <tr>
                 <th>Order #</th>
+                <th>Customer</th>
+                <th>Address</th>
                 <th>Total</th>
                 <th>Status</th>
                 <th>Payment</th>
@@ -993,71 +1024,111 @@ function generateOrdersPage(req: any) {
               </tr>
             </thead>
             <tbody id="orders-body">
-              <tr><td colspan="5" style="text-align:center">Loading...</td></tr>
+              <tr><td colspan="7" style="text-align:center">Loading...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       <script>
         const session = '${req.query.session ? `?session=${req.query.session}` : ''}';
+        let allOrders = [];
+
         fetch('/api/orders' + session)
           .then(r => r.json())
           .then(orders => {
-            const tbody = document.getElementById('orders-body');
-            if (!orders.length) {
-              tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">No orders found</td></tr>';
-              return;
-            }
-            const formatDate = (value) => {
-              if (!value) return '-';
-              const date = new Date(value);
-              return date.toLocaleString();
-            };
+            allOrders = orders;
+            renderOrders(orders);
+          });
 
-            tbody.innerHTML = orders.map(o => {
-              const receivedMeta = \`\${o.receivedName || '—'} • \${formatDate(o.createdAt)}\`;
-              const fulfilledMeta = \`\${o.fulfilledByName ? 'by ' + o.fulfilledByName : 'Pending'}\${o.fulfilledAt ? ' • ' + formatDate(o.fulfilledAt) : ''}\`;
-              const shippedMeta = o.shippedAt ? formatDate(o.shippedAt) : 'Awaiting label';
-              const fulfilledClass = o.fulfilledAt ? 'active' : '';
-              const shippedClass = o.shippedAt ? 'active' : '';
-              const fulfilledClassAttr = fulfilledClass ? ' active' : '';
-              const shippedClassAttr = shippedClass ? ' active' : '';
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+          const query = e.target.value.toLowerCase().trim();
+          
+          if (!query) {
+            renderOrders(allOrders);
+            return;
+          }
 
-              return \`
-                <tr onclick="location.href='/orders/\${o.id}' + session">
-                  <td>\${o.orderNumber || o.id}</td>
-                  <td>$\${(o.totalAmount || 0).toFixed(2)}</td>
-                  <td>
-                    <div class="status-flow">
-                      <div class="status-step active">
-                        <div class="status-step-dot"></div>
-                        <div>
-                          <div class="status-step-label">Received</div>
-                          <div class="status-step-meta">\${receivedMeta}</div>
-                        </div>
-                      </div>
-                      <div class="status-step\${fulfilledClassAttr}">
-                        <div class="status-step-dot"></div>
-                        <div>
-                          <div class="status-step-label">Fulfilled</div>
-                          <div class="status-step-meta">\${fulfilledMeta}</div>
-                        </div>
-                      </div>
-                      <div class="status-step\${shippedClassAttr}">
-                        <div class="status-step-dot"></div>
-                        <div>
-                          <div class="status-step-label">Shipped</div>
-                          <div class="status-step-meta">\${shippedMeta}</div>
-                        </div>
+          const filtered = allOrders.filter(o => {
+            const orderNumber = (o.orderNumber || o.id).toString().toLowerCase();
+            const customerName = (o.receivedName || '').toLowerCase();
+            const address = (o.shippingAddress || '').toLowerCase();
+            
+            return orderNumber.includes(query) || customerName.includes(query) || address.includes(query);
+          });
+
+          renderOrders(filtered, query);
+        });
+
+        function renderOrders(orders, searchQuery = '') {
+          const tbody = document.getElementById('orders-body');
+          const searchInfo = document.getElementById('searchInfo');
+
+          if (!orders.length) {
+            tbody.innerHTML = searchQuery 
+              ? \`<tr><td colspan="7" style="text-align:center">No orders found matching "\${searchQuery}"</td></tr>\`
+              : '<tr><td colspan="7" style="text-align:center">No orders found</td></tr>';
+            searchInfo.textContent = searchQuery ? \`Found 0 results\` : '';
+            return;
+          }
+
+          searchInfo.textContent = searchQuery ? \`Found \${orders.length} result\${orders.length === 1 ? '' : 's'}\` : '';
+
+          const formatDate = (value) => {
+            if (!value) return '-';
+            const date = new Date(value);
+            return date.toLocaleString();
+          };
+
+          tbody.innerHTML = orders.map(o => {
+            const receivedMeta = \`\${o.receivedName || '—'} • \${formatDate(o.createdAt)}\`;
+            const fulfilledMeta = \`\${o.fulfilledByName ? 'by ' + o.fulfilledByName : 'Pending'}\${o.fulfilledAt ? ' • ' + formatDate(o.fulfilledAt) : ''}\`;
+            const shippedMeta = o.shippedAt ? formatDate(o.shippedAt) : 'Awaiting label';
+            const fulfilledClass = o.fulfilledAt ? 'active' : '';
+            const shippedClass = o.shippedAt ? 'active' : '';
+            const fulfilledClassAttr = fulfilledClass ? ' active' : '';
+            const shippedClassAttr = shippedClass ? ' active' : '';
+
+            return \`
+              <tr onclick="location.href='/orders/\${o.id}' + session">
+                <td style="font-weight: 600;">\${o.orderNumber || o.id}</td>
+                <td>
+                  <div class="customer-name">\${o.receivedName || '-'}</div>
+                </td>
+                <td>
+                  <div class="customer-address">\${o.shippingAddress || '-'}</div>
+                </td>
+                <td>$\${(o.totalAmount || 0).toFixed(2)}</td>
+                <td>
+                  <div class="status-flow">
+                    <div class="status-step active">
+                      <div class="status-step-dot"></div>
+                      <div>
+                        <div class="status-step-label">Received</div>
+                        <div class="status-step-meta">\${formatDate(o.createdAt)}</div>
                       </div>
                     </div>
-                  </td>
-                  <td><span class="status status-\${(o.paymentStatus || 'pending').toLowerCase()}">\${o.paymentStatus}</span></td>
-                  <td>\${formatDate(o.createdAt)}</td>
-                </tr>
-              \`;
-            }).join('');
-          });
+                    <div class="status-step\${fulfilledClassAttr}">
+                      <div class="status-step-dot"></div>
+                      <div>
+                        <div class="status-step-label">Fulfilled</div>
+                        <div class="status-step-meta">\${fulfilledMeta}</div>
+                      </div>
+                    </div>
+                    <div class="status-step\${shippedClassAttr}">
+                      <div class="status-step-dot"></div>
+                      <div>
+                        <div class="status-step-label">Shipped</div>
+                        <div class="status-step-meta">\${shippedMeta}</div>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="status status-\${(o.paymentStatus || 'pending').toLowerCase()}">\${o.paymentStatus}</span></td>
+                <td>\${formatDate(o.createdAt)}</td>
+              </tr>
+            \`;
+          }).join('');
+        }
       </script>
     </body>
     </html>
@@ -1070,21 +1141,25 @@ function generateOrderDetailPage(req: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Order ${id}</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
-        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main { padding: 30px; max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; }
-        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; min-width: 0; }
-        .btn { background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        .header { background: #667eea; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 8px; }
+        .header h1 { font-size: 20px; margin: 0; }
+        .main { padding: 16px; max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+        .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active { opacity: 0.85; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 16px; margin-bottom: 16px; min-width: 0; }
+        .btn { background: #4299e1; color: white; border: none; padding: 14px 18px; border-radius: 10px; cursor: pointer; width: 100%; margin-top: 10px; min-height: 44px; touch-action: manipulation; font-size: 16px; font-weight: 600; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn:active { opacity: 0.85; }
         .btn.secondary { background: #48bb78; }
         .btn.danger { background: #f56565; }
-        .info-row { margin-bottom: 10px; }
+        .info-row { margin-bottom: 12px; }
         .info-label { font-weight: bold; font-size: 12px; color: #718096; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+        th, td { padding: 12px 8px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
         .status-flow { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
         .status-step { display: flex; align-items: flex-start; gap: 10px; color: #4a5568; }
         .status-step-dot { width: 12px; height: 12px; border-radius: 50%; background: #cbd5f5; margin-top: 4px; }
@@ -1101,18 +1176,26 @@ function generateOrderDetailPage(req: any) {
         .action-btn.info { background: #0ea5e9; color: white; border-color: #0284c7; }
         .variant-meta { font-size: 12px; color: #4a5568; margin-top: 4px; }
         @media (max-width: 768px) {
-          .header { flex-direction: column; gap: 10px; align-items: flex-start; }
-          .main { grid-template-columns: 1fr; padding: 16px; }
-          .card { padding: 16px; }
-          .btn { width: 100%; }
+          .main { grid-template-columns: 1fr; padding: 12px; gap: 12px; }
+          .card { padding: 14px; }
+          .btn { padding: 14px 16px; font-size: 15px; }
           .label-actions { max-width: 100%; }
-          table { display: block; width: 100%; }
+          table { display: block; width: 100%; font-size: 13px; }
           thead { display: none; }
           tbody, tr { display: block; width: 100%; }
-          tr { border-bottom: 1px solid #eee; padding: 8px 0; }
-          td { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border: none; font-size: 13px; }
-          td::before { content: attr(data-label); font-weight: 600; color: #4a5568; flex: 0 0 110px; }
+          tr { border-bottom: 1px solid #eee; padding: 10px 0; margin-bottom: 8px; }
+          td { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border: none; font-size: 13px; }
+          td::before { content: attr(data-label); font-weight: 600; color: #4a5568; flex: 0 0 100px; }
           td:last-child { border-bottom: none; }
+        }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .main { padding: 10px; gap: 10px; }
+          .card { padding: 12px; border-radius: 10px; }
+          .btn { padding: 12px 14px; font-size: 15px; min-height: 44px; }
+          table { font-size: 12px; }
+          td { gap: 8px; padding: 4px 0; }
+          td::before { flex: 0 0 90px; font-size: 12px; }
         }
       </style>
     </head>

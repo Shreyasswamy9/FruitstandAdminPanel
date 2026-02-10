@@ -113,17 +113,20 @@ function generateTicketsPage(req: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Support Tickets</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
-        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main { padding: 30px; max-width: 1200px; margin: 0 auto; }
-        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; }
-        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        .header { background: #667eea; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+        .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active { opacity: 0.85; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
         th { background: #f8f9fa; font-weight: 600; }
-        tr:hover { background: #f8f9fa; cursor: pointer; }
+        tr:active { background: #f8f9fa; }
         .status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
         .status-open { background: #e2e8f0; color: #4a5568; }
         .status-in-progress { background: #bee3f8; color: #2b6cb0; }
@@ -134,6 +137,14 @@ function generateTicketsPage(req: any) {
         .p-high { color: #dd6b20; }
         .p-medium { color: #d69e2e; }
         .p-low { color: #38a169; }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .header h1 { font-size: 18px; }
+          .main { padding: 12px; }
+          .back-btn { padding: 10px 14px; font-size: 13px; }
+          table { font-size: 13px; }
+          th, td { padding: 10px 8px; }
+        }
       </style>
     </head>
     <body>
@@ -196,21 +207,39 @@ function generateTicketDetailPage(req: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Ticket #${id}</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
-        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main { padding: 30px; max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; }
-        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
-        .message { margin-bottom: 20px; padding: 15px; border-radius: 8px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        .header { background: #667eea; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .main { padding: 16px; max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+        .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active { opacity: 0.85; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 16px; margin-bottom: 16px; }
+        .message { margin-bottom: 16px; padding: 12px; border-radius: 8px; }
         .msg-user { background: #f7fafc; border-left: 4px solid #4299e1; }
-        .msg-admin { background: #f0fff4; border-left: 4px solid #48bb78; margin-left: 40px; }
+        .msg-admin { background: #f0fff4; border-left: 4px solid #48bb78; margin-left: 0; }
         .msg-meta { font-size: 12px; color: #718096; margin-bottom: 5px; display: flex; justify-content: space-between; }
-        .reply-box textarea { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; min-height: 100px; margin-bottom: 10px; }
-        .btn { background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; }
-        .info-row { margin-bottom: 10px; }
+        .reply-box textarea { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; min-height: 100px; margin-bottom: 10px; font-family: inherit; font-size: 16px; }
+        .btn { background: #4299e1; color: white; border: none; padding: 12px 18px; border-radius: 10px; cursor: pointer; min-height: 44px; touch-action: manipulation; font-size: 14px; }
+        .btn:active { opacity: 0.85; }
+        .info-row { margin-bottom: 12px; }
         .info-label { font-weight: bold; font-size: 12px; color: #718096; text-transform: uppercase; }
+        @media (max-width: 768px) {
+          .main { grid-template-columns: 1fr; padding: 12px; gap: 12px; }
+          .card { padding: 12px; }
+          .btn { width: 100%; }
+        }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .header h1 { font-size: 18px; }
+          .main { padding: 10px; gap: 10px; }
+          .card { padding: 10px; }
+          .btn { padding: 12px 14px; font-size: 13px; }
+          .message { padding: 10px; margin-bottom: 12px; }
+          .msg-admin { margin-left: 0; }
+        }
       </style>
     </head>
     <body>

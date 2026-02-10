@@ -16,19 +16,22 @@ export function generateActivityPage(req: any, activities: any[]) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Activity Tracking (Admin)</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
-        .header { background: #dc3545; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main-content { padding: 30px; max-width: 1400px; margin: 0 auto; }
-        .back-btn, .refresh-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; margin-right: 10px; }
-        .refresh-btn { background: #28a745; }
-        .filters { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .filter-group { display: inline-block; margin-right: 20px; }
-        .filter-group select, .filter-group input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
-        .activity-container { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        .header { background: #dc3545; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .main-content { padding: 16px; max-width: 1400px; margin: 0 auto; }
+        .back-btn, .refresh-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; cursor: pointer; text-decoration: none; margin-right: 8px; min-height: 44px; touch-action: manipulation; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active, .refresh-btn:active { opacity: 0.85; }
+        .refresh-btn { background: #28a745; margin-right: 0; }
+        .filters { background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px; }
+        .filter-group { display: inline-block; margin-right: 16px; margin-bottom: 8px; }
+        .filter-group select, .filter-group input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        .activity-container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
         .activity-table { width: 100%; }
-        .activity-table th, .activity-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
+        .activity-table th, .activity-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #eee; font-size: 13px; }
         .activity-table th { background: #f8f9fa; font-weight: bold; }
         .action-login { color: #28a745; font-weight: bold; }
         .action-page { color: #17a2b8; }
@@ -40,7 +43,22 @@ export function generateActivityPage(req: any, activities: any[]) {
         .timestamp { white-space: nowrap; }
         .user-filter { background: #e9ecef; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
         .admin-badge { background: #fff; color: #dc3545; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .admin-warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .admin-warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+        @media (max-width: 768px) {
+          .filter-group { display: block; margin-right: 0; margin-bottom: 12px; width: 100%; }
+          .filter-group select, .filter-group input { width: 100%; }
+          .activity-table th, .activity-table td { padding: 8px 6px; font-size: 12px; }
+        }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .header h1 { font-size: 18px; }
+          .main-content { padding: 12px; }
+          .back-btn, .refresh-btn { padding: 10px 14px; font-size: 12px; margin-right: 6px; }
+          .filters { padding: 12px; }
+          .activity-table { font-size: 11px; }
+          .activity-table th, .activity-table td { padding: 6px 4px; }
+          .details { font-size: 10px; }
+        }
       </style>
     </head>
     <body>

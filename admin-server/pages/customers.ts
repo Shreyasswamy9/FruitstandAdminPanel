@@ -109,17 +109,31 @@ function generateCustomersPage(req: any) {
     <!DOCTYPE html>
     <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Customers</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
-        .header { background: #667eea; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .main { padding: 30px; max-width: 1200px; margin: 0 auto; }
-        .back-btn { background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; text-decoration: none; }
-        .btn { background: #4299e1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
-        .card { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; margin-top: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f5f5f5; overflow-x: hidden; }
+        .header { background: #667eea; color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+        .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .back-btn:active { opacity: 0.85; }
+        .btn { background: #4299e1; color: white; border: none; padding: 12px 18px; border-radius: 10px; cursor: pointer; min-height: 44px; touch-action: manipulation; font-size: 14px; }
+        .btn:active { opacity: 0.85; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; margin-top: 16px; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
         th { background: #f8f9fa; font-weight: 600; }
+        tr:active { background: #f8f9fa; }
+        @media (max-width: 480px) {
+          .header { padding: 12px; }
+          .header h1 { font-size: 18px; }
+          .main { padding: 12px; }
+          .back-btn { padding: 10px 14px; font-size: 13px; }
+          .btn { padding: 10px 14px; font-size: 13px; }
+          table { font-size: 13px; }
+          th, td { padding: 10px 8px; }
+        }
       </style>
     </head>
     <body>
