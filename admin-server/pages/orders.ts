@@ -590,16 +590,30 @@ export function registerOrdersRoutes(
 
       console.log('Shipping rates request:', { length, width, height, weight, addressFrom });
 
+      // Normalize address: merge street2 into street1 to prevent carriers from reordering
+      const normalizeAddress = (addr: any) => {
+        if (!addr) return addr;
+        const normalized = { ...addr };
+        if (normalized.street1 && normalized.street2) {
+          normalized.street1 = `${normalized.street1} ${normalized.street2}`;
+          delete normalized.street2;
+        }
+        return normalized;
+      };
+
       // Use custom address if provided, otherwise use default
-      const fromAddress = addressFrom || {
+      let fromAddress = addressFrom || {
         name: "Fruitstand",
         street1: "37-30 Review Avenue",
-        street2: "Ste 202",
+        street2: "Suite 202",
         city: "Long Island City",
         state: "NY",
         zip: "11101",
         country: "US"
       };
+      
+      // Normalize the return address
+      fromAddress = normalizeAddress(fromAddress);
 
       try {
         console.log('Creating shipment with address:', fromAddress);
@@ -863,17 +877,33 @@ export function registerOrdersRoutes(
       const order = await prisma.orders.findUnique({ where: { id } });
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
+      // Normalize address: merge street2 into street1 to prevent carriers from reordering
+      const normalizeAddress = (addr: any) => {
+        if (!addr) return addr;
+        const normalized = { ...addr };
+        if (normalized.street1 && normalized.street2) {
+          normalized.street1 = `${normalized.street1} ${normalized.street2}`;
+          delete normalized.street2;
+        }
+        return normalized;
+      };
+
       // Create shipment using individual address fields
+      let fromAddress = {
+        name: "FRUITSTAND",
+        street1: "37-30 Review Avenue",
+        street2: "Suite 202",
+        city: "Long Island City",
+        state: "NY",
+        zip: "11101",
+        country: "US"
+      };
+      
+      // Normalize the return address
+      fromAddress = normalizeAddress(fromAddress);
+
       const shipment = await shippoClient.shipments.create({
-        addressFrom: {
-          name: "FRUITSTAND",
-          street1: "3730 Review Avenue",
-          street2: "Ste 202",
-          city: "Long Island City,",
-          state: "NY",
-          zip: "11101",
-          country: "US"
-        },
+        addressFrom: fromAddress,
         addressTo: {
           name: order.shipping_name || order.shipping_email,
           street1: order.shipping_address_line1,
