@@ -603,7 +603,7 @@ export function registerOrdersRoutes(
 
       // Use custom address if provided, otherwise use default
       let fromAddress = addressFrom || {
-        name: "Fruitstand",
+        name: "FRUITSTAND",
         street1: "37-30 Review Avenue",
         street2: "Suite 202",
         city: "Long Island City",
@@ -1334,7 +1334,7 @@ function generateOrderDetailPage(req: any) {
               
               <div style="margin-bottom:10px">
                 <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Name</label>
-                <input type="text" id="ship-name" value="Fruitstand NY" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                <input type="text" id="ship-name" value="FRUITSTAND" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
               </div>
 
               <div style="margin-bottom:10px">
