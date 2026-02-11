@@ -787,9 +787,18 @@ export function registerOrdersRoutes(
       // Get the PDF content
       const pdfBuffer = await labelResponse.arrayBuffer();
 
+      // Prepare a safe filename using the customer's name, fallback to tracking number or order ID
+      let baseName = order.shipping_name
+        ? `${order.shipping_name.replace(/[^a-zA-Z0-9-_]/g, '_')}-shipping-label`
+        : order.tracking_number
+          ? `${order.tracking_number}-shipping-label`
+          : `${id}-shipping-label`;
+      baseName = baseName.replace(/_+/g, '_'); // Collapse multiple underscores
+      const filename = `${baseName}.pdf`;
+
       // Set headers to force download
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="shipping-label-${order.tracking_number || id}.pdf"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', pdfBuffer.byteLength);
 
       res.send(Buffer.from(pdfBuffer));
