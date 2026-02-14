@@ -861,10 +861,10 @@ export function registerOrdersRoutes(
           event: {
             name: 'order_shipped',
             properties: {
-              orderId: id,
-              orderNumber,
-              trackingNumber,
-              labelUrl
+              ORDERNUMBER: orderNumber,
+              TRACKINGNUMBER: trackingNumber,
+              ORDERID: id,
+              LABELURL: labelUrl
             }
           }
         }
