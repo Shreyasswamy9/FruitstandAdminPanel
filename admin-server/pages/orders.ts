@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import Stripe from 'stripe';
 import * as ShippoModule from 'shippo';
@@ -840,17 +841,20 @@ export function registerOrdersRoutes(
       const orderNumber = order.order_number ?? id;
       const labelUrl = order.label_url ?? undefined;
 
-      if (process.env.MAILCHIMP_LIST_ID) {
-        try {
-          await mailchimp.lists.addListMember(process.env.MAILCHIMP_LIST_ID, {
-            email_address: email,
-            status: 'subscribed'
-          });
-        } catch (e: any) {
-          if (!(e?.response?.body?.title === 'Member Exists' || e?.message?.includes('Member Exists'))) {
-            console.error('Mailchimp addListMember failed:', e?.response?.body?.detail || e?.message || e);
-          }
-        }
+      if (!process.env.MAILCHIMP_LIST_ID) {
+        return res.status(500).json({ error: 'Mailchimp list ID not configured' });
+      }
+
+      try {
+        const subscriberHash = crypto.createHash('md5').update(email.toLowerCase()).digest('hex');
+        await mailchimp.lists.setListMember(process.env.MAILCHIMP_LIST_ID, subscriberHash, {
+          email_address: email,
+          status_if_new: 'subscribed',
+          merge_fields: { TEXTAREAY: String(trackingNumber) }
+        });
+      } catch (e: any) {
+        console.error('Mailchimp setListMember failed:', e?.response?.body?.detail || e?.message || e);
+        return res.status(500).json({ error: 'Failed to update Mailchimp list member', details: e?.response?.body || e?.message || e });
       }
 
       await mailchimp.customerJourneys.trigger(
