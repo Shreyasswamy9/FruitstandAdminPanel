@@ -6,12 +6,14 @@ declare module '@mailchimp/mailchimp_marketing' {
 
   interface MailchimpListMember {
     email_address: string;
-    status: 'subscribed' | 'unsubscribed' | 'cleaned' | 'pending';
+    status?: 'subscribed' | 'unsubscribed' | 'cleaned' | 'pending';
+    status_if_new?: 'subscribed' | 'unsubscribed' | 'cleaned' | 'pending';
     merge_fields?: Record<string, unknown>;
   }
 
   interface MailchimpListsApi {
     addListMember(listId: string, member: MailchimpListMember): Promise<unknown>;
+    setListMember(listId: string, subscriberHash: string, member: MailchimpListMember): Promise<unknown>;
   }
 
   interface MailchimpCustomerJourneysTriggerEvent {
