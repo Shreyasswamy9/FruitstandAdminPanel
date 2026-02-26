@@ -611,7 +611,7 @@ model products {
   category_id       String?            @db.Uuid
   stripe_price_id   String?
   stripe_product_id String?
-  image_url         String
+  image_url         String?
   hover_image_url   String?
   is_active         Boolean?           @default(true)
   featured          Boolean?           @default(false)

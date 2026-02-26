@@ -17,7 +17,7 @@ export function registerProductsRoutes(
   app.get('/products/:id', requireAdmin, async (req: any, res: any) => {
     try {
       const id = req.params.id;
-      const product = await prisma.product.findUnique({
+      const product = await prisma.products.findUnique({
         where: { id },
         include: { categories: true, product_variants: true }
       });
@@ -32,8 +32,8 @@ export function registerProductsRoutes(
   // API: Get Products
   app.get('/api/products', requireAuth, async (req: any, res: any) => {
     try {
-      const products = await prisma.product.findMany({
-        orderBy: { createdAt: 'desc' },
+      const products = await prisma.products.findMany({
+        orderBy: { created_at: 'desc' },
         include: { categories: true }
       });
       // Serialize Decimals
@@ -70,7 +70,7 @@ export function registerProductsRoutes(
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString().slice(-4);
       const imageUrl = images ? images.split(',')[0].trim() : '';
 
-      const product = await prisma.product.create({
+      const product = await prisma.products.create({
         data: {
           name,
           slug,
@@ -115,7 +115,7 @@ export function registerProductsRoutes(
       const imageUrl = images ? images.split(',')[0].trim() : '';
 
       // Update Product
-      const product = await prisma.product.update({
+      const product = await prisma.products.update({
         where: { id: req.params.id },
         data: {
           name,
@@ -151,7 +151,7 @@ export function registerProductsRoutes(
   // API: Delete Product
   app.delete('/api/products/:id', requireAdmin, async (req: any, res: any) => {
     try {
-      await prisma.product.delete({ where: { id: req.params.id } });
+      await prisma.products.delete({ where: { id: req.params.id } });
       logActivity(req.user.id, req.user.email, 'PRODUCT_DELETE', { productId: req.params.id });
       res.json({ ok: true });
     } catch {
