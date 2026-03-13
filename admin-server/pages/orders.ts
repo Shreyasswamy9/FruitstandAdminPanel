@@ -585,7 +585,7 @@ export function registerOrdersRoutes(
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
       // Get package dimensions from request body, with defaults
-      const { length = "5", width = "5", height = "5", weight = "2", addressFrom } = req.body;
+      const { length = "5", width = "5", height = "5", weight = "2", addressFrom, addressTo: bodyAddressTo } = req.body;
       const parsedWeight = Number.parseFloat(weight);
       const safeWeight = Number.isFinite(parsedWeight) ? Math.max(parsedWeight, 0.1).toFixed(2) : '0.1';
 
@@ -618,20 +618,22 @@ export function registerOrdersRoutes(
 
       try {
         console.log('Creating shipment with address:', fromAddress);
+        // Build resolved destination: use client-supplied addressTo if provided, fall back to order fields
+        const resolvedAddressTo = {
+          name: bodyAddressTo?.name || order.shipping_name || order.shipping_email,
+          street1: bodyAddressTo?.street1 || order.shipping_address_line1,
+          street2: bodyAddressTo?.street2 || order.shipping_address_line2,
+          city: bodyAddressTo?.city || order.shipping_city,
+          state: bodyAddressTo?.state || order.shipping_state,
+          zip: bodyAddressTo?.zip || order.shipping_postal_code,
+          country: bodyAddressTo?.country || order.shipping_country || 'US',
+          email: order.shipping_email,
+          phone: order.shipping_phone
+        };
         // Create shipment using individual address fields
         const shipment = await shippoClient.shipments.create({
           addressFrom: fromAddress,
-          addressTo: {
-            name: order.shipping_name || order.shipping_email,
-            street1: order.shipping_address_line1,
-            street2: order.shipping_address_line2,
-            city: order.shipping_city,
-            state: order.shipping_state,
-            zip: order.shipping_postal_code,
-            country: order.shipping_country || 'US',
-            email: order.shipping_email,
-            phone: order.shipping_phone
-          },
+          addressTo: resolvedAddressTo,
           parcels: [{
             length: String(length),
             width: String(width),
@@ -642,7 +644,6 @@ export function registerOrdersRoutes(
           }],
           async: false
         });
-
         console.log('Shipment created:', JSON.stringify(shipment, null, 2));
 
         if (!shipment.rates || shipment.rates.length === 0) {
@@ -1038,10 +1039,9 @@ function generateOrdersPage(req: any) {
         .customer-name { font-weight: 600; color: #333; margin-bottom: 4px; }
         .customer-address { font-size: 12px; color: #666; line-height: 1.4; }
         .status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-        .status-paid { background: #c6f6d5; color: #276749; }
-        .status-pending { background: #bee3f8; color: #2b6cb0; }
-        .status-failed { background: #fed7d7; color: #9b2c2c; }
-        .status-shipped { background: #d6bcfa; color: #553c9a; }
+        .status-received { background: #e2e8f0; color: #334155; }
+        .status-fulfilled { background: #bfdbfe; color: #1e3a8a; }
+        .status-shipped { background: #bbf7d0; color: #166534; }
         .status-flow { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
         .status-step { display: flex; align-items: flex-start; gap: 8px; color: #4a5568; }
         .status-step-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5f5; margin-top: 4px; }
@@ -1078,8 +1078,8 @@ function generateOrdersPage(req: any) {
                 <th>Customer</th>
                 <th>Address</th>
                 <th>Total</th>
-                <th>Status</th>
-                <th>Payment</th>
+                <th>Status Timeline</th>
+                <th>Current Status</th>
                 <th>Date</th>
               </tr>
             </thead>
@@ -1147,6 +1147,8 @@ function generateOrdersPage(req: any) {
             const shippedClass = o.shippedAt ? 'active' : '';
             const fulfilledClassAttr = fulfilledClass ? ' active' : '';
             const shippedClassAttr = shippedClass ? ' active' : '';
+            const lifecycleStatus = o.shippedAt ? 'Shipped' : (o.fulfilledAt ? 'Fulfilled' : 'Received');
+            const lifecycleStatusClass = lifecycleStatus.toLowerCase();
 
             return \`
               <tr onclick="location.href='/orders/\${o.id}' + session">
@@ -1183,7 +1185,7 @@ function generateOrdersPage(req: any) {
                     </div>
                   </div>
                 </td>
-                <td><span class="status status-\${(o.paymentStatus || 'pending').toLowerCase()}">\${o.paymentStatus}</span></td>
+                <td><span class="status status-\${lifecycleStatusClass}">\${lifecycleStatus}</span></td>
                 <td>\${formatDate(o.createdAt)}</td>
               </tr>
             \`;
@@ -1284,8 +1286,7 @@ function generateOrderDetailPage(req: any) {
             <button id="ship-btn" class="btn" onclick="openLabelModal()">Create Shipping Label</button>
             <div id="label-link"></div>
 
-            <div class="info-row"><div class="info-label">Payment</div><div id="p-status">-</div></div>
-            <div class="info-row"><div class="info-label">Fulfillment</div><div id="o-status">-</div></div>
+            <div class="info-row"><div class="info-label">Current Status</div><div id="lifecycle-status">-</div></div>
             <div class="info-row"><div class="info-label">Tracking ID</div><div id="tracking-container" style="display:flex;align-items:center;gap:8px"><code id="tracking" style="padding:4px 8px;background:#f5f5f5;border-radius:4px;font-family:monospace;font-size:12px;flex:1;word-break:break-all">-</code><button onclick="copyTracking()" style="padding:4px 8px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap;flex-shrink:0">Copy</button></div></div>
             <div class="status-flow" id="status-flow"></div>
           </div>
@@ -1340,6 +1341,51 @@ function generateOrderDetailPage(req: any) {
               <select id="service-select" style="width:100%;padding:10px;border:2px solid #667eea;border-radius:6px;box-sizing:border-box;font-size:14px;background:white;cursor:pointer">
                 <option value="">Loading services...</option>
               </select>
+            </div>
+
+            <div style="margin-bottom:16px;padding:12px;background:#f0fff4;border-radius:8px;border-left:4px solid #48bb78">
+              <label style="display:block;margin-bottom:10px;font-weight:bold;font-size:14px">📬 Ship To (Customer Address)</label>
+
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Name</label>
+                <input type="text" id="dest-name" placeholder="Customer name" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Street 1</label>
+                <input type="text" id="dest-street1" placeholder="Street address" onblur="refreshRates()" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="margin-bottom:10px">
+                <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Street 2 (Apt/Unit)</label>
+                <input type="text" id="dest-street2" placeholder="Apt, suite, unit (optional)" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+              </div>
+
+              <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:10px">
+                <div>
+                  <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">City</label>
+                  <input type="text" id="dest-city" placeholder="City" onblur="refreshRates()" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                </div>
+                <div>
+                  <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">State</label>
+                  <input type="text" id="dest-state" placeholder="State" onblur="refreshRates()" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+                <div>
+                  <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">ZIP Code</label>
+                  <input type="text" id="dest-zip" placeholder="ZIP" onblur="refreshRates()" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                </div>
+                <div>
+                  <label style="display:block;margin-bottom:4px;font-weight:600;font-size:12px;color:#4a5568">Country</label>
+                  <input type="text" id="dest-country" placeholder="US" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:13px">
+                </div>
+              </div>
+
+              <div style="font-size:12px;color:#276749;background:white;padding:8px;border-radius:4px;margin-top:4px">
+                ✏️ Pre-filled from order. Edit only if the customer needs a different delivery address — rates will refresh automatically.
+              </div>
             </div>
 
             <div style="margin-bottom:16px;padding:12px;background:#f0f4ff;border-radius:8px;border-left:4px solid #667eea">
@@ -1554,13 +1600,15 @@ function generateOrderDetailPage(req: any) {
           fetch('/api/orders/' + id + session)
             .then(r => r.json())
             .then(o => {
-              const paymentStatus = o.paymentStatus || o.payment_status || 'pending';
+              window.currentOrder = o;
               const fulfillmentStatus = o.status || 'pending';
               const trackingNumber = o.trackingNumber || o.tracking_number;
               const labelUrl = o.labelUrl || o.label_url;
+              const lifecycleStatus = (o.shippedAt || o.shipped_at)
+                ? 'Shipped'
+                : ((o.fulfilledAt || o.fulfilled_at || fulfillmentStatus === 'fulfilled') ? 'Fulfilled' : 'Received');
 
-              document.getElementById('p-status').textContent = paymentStatus;
-              document.getElementById('o-status').textContent = fulfillmentStatus;
+              document.getElementById('lifecycle-status').textContent = lifecycleStatus;
               document.getElementById('tracking').textContent = trackingNumber || 'None';
 
               document.getElementById('status-flow').innerHTML = buildStatusFlow(o);
@@ -1674,10 +1722,22 @@ function generateOrderDetailPage(req: any) {
         
         function openLabelModal() {
           document.getElementById('label-modal').style.display = 'flex';
-          
+
+          // Pre-populate Ship To fields from order data
+          if (window.currentOrder) {
+            const o = window.currentOrder;
+            document.getElementById('dest-name').value = o.shipping_name || '';
+            document.getElementById('dest-street1').value = o.shipping_address_line1 || '';
+            document.getElementById('dest-street2').value = o.shipping_address_line2 || '';
+            document.getElementById('dest-city').value = o.shipping_city || '';
+            document.getElementById('dest-state').value = o.shipping_state || '';
+            document.getElementById('dest-zip').value = o.shipping_postal_code || '';
+            document.getElementById('dest-country').value = o.shipping_country || 'US';
+          }
+
           // Load templates
           loadParcelTemplates();
-          
+
           // Load initial rates
           const length = document.getElementById('pkg-length').value || '5';
           const width = document.getElementById('pkg-width').value || '5';
@@ -1760,12 +1820,22 @@ function generateOrderDetailPage(req: any) {
             country: 'US'
           };
 
-          console.log('Loading rates with:', { length, width, height, weight, addressFrom });
+          const addressTo = {
+            name: document.getElementById('dest-name').value,
+            street1: document.getElementById('dest-street1').value,
+            street2: document.getElementById('dest-street2').value,
+            city: document.getElementById('dest-city').value,
+            state: document.getElementById('dest-state').value,
+            zip: document.getElementById('dest-zip').value,
+            country: document.getElementById('dest-country').value || 'US'
+          };
+
+          console.log('Loading rates with:', { length, width, height, weight, addressFrom, addressTo });
 
           fetch('/api/orders/' + id + '/shipping-rates' + session, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ length, width, height, weight, addressFrom })
+            body: JSON.stringify({ length, width, height, weight, addressFrom, addressTo })
           })
             .then(r => {
               console.log('Response status:', r.status);
