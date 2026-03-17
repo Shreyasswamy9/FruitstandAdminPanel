@@ -529,6 +529,7 @@ model orders {
   updated_at                 DateTime?     @default(now()) @db.Timestamptz(6)
   fulfilled_at               DateTime?     @db.Timestamptz(6)
   shipped_at                 DateTime?     @db.Timestamptz(6)
+  shipping_email_sent_at     DateTime?     @db.Timestamptz(6)
   fulfilled_by_name          String?
   tracking_url               String?
   label_url                  String?

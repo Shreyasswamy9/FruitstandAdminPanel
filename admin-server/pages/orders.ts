@@ -284,6 +284,7 @@ export function registerOrdersRoutes(
         fulfilled_by_id: order.fulfilled_by_id,
         fulfilled_by_name: order.fulfilled_by_name,
         shipped_at: order.shipped_at,
+        shipping_email_sent_at: order.shipping_email_sent_at,
         customer_email: order.customer?.email ?? order.shipping_email,
         customer_name: order.shipping_name,
         fulfilled_by_email: order.fulfilled_by?.email,
@@ -294,6 +295,7 @@ export function registerOrdersRoutes(
         fulfilledById: order.fulfilled_by_id,
         fulfilledByName: order.fulfilled_by_name,
         shippedAt: order.shipped_at,
+        shippingEmailSentAt: order.shipping_email_sent_at,
         customerEmail: order.customer?.email ?? order.shipping_email,
         customerName: order.shipping_name,
         fulfilledByEmail: order.fulfilled_by?.email,
@@ -903,6 +905,12 @@ export function registerOrdersRoutes(
           }
         }
       );
+
+      // Update order to mark shipping email as sent
+      await prisma.orders.update({
+        where: { id },
+        data: { shipping_email_sent_at: new Date() }
+      });
 
       return res.json({ ok: true });
     } catch (e: any) {
@@ -1569,11 +1577,14 @@ function generateOrderDetailPage(req: any) {
           const fulfilledMeta = (fulfilledBy ? 'by ' + fulfilledBy : 'Pending') + ((order.fulfilledAt || order.fulfilled_at) ? ' • ' + formatDateTime(order.fulfilledAt || order.fulfilled_at) : '');
           const shippedMeta = (order.shippedAt || order.shipped_at) ? formatDateTime(order.shippedAt || order.shipped_at) : 'Awaiting label';
           const shippedActive = Boolean(order.shippedAt || order.shipped_at || order.status === 'shipped');
+          const emailSentMeta = (order.shipping_email_sent_at || order.shippingEmailSentAt) ? formatDateTime(order.shipping_email_sent_at || order.shippingEmailSentAt) : 'Not sent yet';
+          const emailSentActive = Boolean(order.shipping_email_sent_at || order.shippingEmailSentAt);
 
           const steps = [
             { label: 'Received', active: true, meta: receivedMeta },
             { label: 'Fulfilled', active: Boolean(order.fulfilledAt || order.fulfilled_at), meta: fulfilledMeta },
-            { label: 'Shipped', active: shippedActive, meta: shippedMeta }
+            { label: 'Shipped', active: shippedActive, meta: shippedMeta },
+            { label: 'Email Sent', active: emailSentActive, meta: emailSentMeta }
           ];
 
           return steps.map(step => \`
@@ -2218,6 +2229,8 @@ function generateOrderDetailPage(req: any) {
             .then(res => {
               if (res.ok) {
                 alert('Shipping email sent');
+                // Reload the order to update the status
+                load();
               } else {
                 const details = res.details ? ' - ' + JSON.stringify(res.details) : '';
                 alert('Error: ' + (res.error || 'Failed') + details);
