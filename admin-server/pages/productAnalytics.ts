@@ -1,7 +1,8 @@
 import prisma from "../config/database";
 import {
+  getAllProductsWithSalesPerformance,
+  getDailyProductBreakdown,
   getDailySalesTrend,
-  getLowPerformingProducts,
   getProductDetailMetrics,
   getProductPerformance,
   getSalesSummary,
@@ -69,19 +70,21 @@ export function registerProductAnalyticsRoutes(
       const sortBy = parseSortBy(query.sortBy);
       const sortDirection = parseSortDirection(query.sortDirection);
 
-      const [summary, dailyTrend, productPerformance] = await Promise.all([
+      const [summary, dailyTrend, productPerformance, allProductsPerformance] = await Promise.all([
         getSalesSummary(prismaClient, { start: dateRange.start, endExclusive: dateRange.endExclusive }),
         getDailySalesTrend(prismaClient, { start: dateRange.start, endExclusive: dateRange.endExclusive }),
         getProductPerformance(
           prismaClient,
           { start: dateRange.start, endExclusive: dateRange.endExclusive },
           { search, sortBy, sortDirection }
-        )
+        ),
+        getAllProductsWithSalesPerformance(prismaClient, { start: dateRange.start, endExclusive: dateRange.endExclusive })
       ]);
 
       const topRevenueProducts = getTopProducts(productPerformance, "grossRevenue", 10);
       const topUnitProducts = getTopProducts(productPerformance, "unitsSold", 10);
-      const lowPerformingProducts = getLowPerformingProducts(productPerformance, "grossRevenue", 10);
+      // Low-performing now includes all products (including zero-sales), sorted ascending by revenue
+      const lowPerformingProducts = allProductsPerformance.slice(0, 10);
 
       res.send(
         generateProductAnalyticsPage({
@@ -124,6 +127,22 @@ export function registerProductAnalyticsRoutes(
     } catch (error) {
       console.error("Failed to fetch product detail analytics", error);
       return res.status(500).json({ error: "Failed to fetch product detail analytics" });
+    }
+  });
+
+  app.get("/api/admin/analytics/products/day/:date", requireAuth, async (req: any, res: any) => {
+    try {
+      const date = req.params.date;
+      // Validate date format YYYY-MM-DD
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD." });
+      }
+
+      const breakdown = await getDailyProductBreakdown(prismaClient, date);
+      return res.json({ date, breakdown });
+    } catch (error) {
+      console.error("Failed to fetch daily product breakdown", error);
+      return res.status(500).json({ error: "Failed to fetch daily product breakdown" });
     }
   });
 
@@ -665,6 +684,9 @@ function generateProductAnalyticsPage(data: {
 
     <section class="panel">
       <div class="panel-title">Sales Charts</div>
+      <div style="margin-bottom: 12px;">
+        <label style="font-size: 12px; font-weight: 700; color: #5a6b7a; text-transform: uppercase; letter-spacing: 0.04em;">Click on any date in the charts below to view sales for that day:</label>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><canvas id="dailyRevenueChart" height="180"></canvas></div>
         <div class="chart-card"><canvas id="dailyUnitsChart" height="180"></canvas></div>
@@ -674,6 +696,32 @@ function generateProductAnalyticsPage(data: {
     </section>
 
     <section class="panel">
+      <div class="panel-title">Daily Breakdown</div>
+      <div style="margin-bottom: 12px;">
+        <div class="field" style="max-width: 300px;">
+          <label>Select Date or Click Chart</label>
+          <input type="date" id="dayPickerInput" style="border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: white; color: var(--ink); font-size: 14px; width: 100%;" />
+        </div>
+      </div>
+      <div id="dayBreakdownSection" style="display: none;">
+        <div class="table-wrap">
+          <table id="dayBreakdownTable">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Units Sold</th>
+                <th>Revenue</th>
+                <th>Orders</th>
+                <th>Avg Price</th>
+              </tr>
+            </thead>
+            <tbody id="dayBreakdownBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="noDataMessage" style="padding: 16px; text-align: center; color: #5a6b7a;">Select a date to view daily breakdown</div>
+    </section>
+
       <div class="panel-title">Product Performance</div>
       <div class="table-toolbar">
         <span class="chip" id="rowCountChip">${data.productPerformance.length} products</span>
@@ -926,7 +974,7 @@ function generateProductAnalyticsPage(data: {
       const revenue = analyticsData.dailyTrend.map((d) => d.revenue);
       const units = analyticsData.dailyTrend.map((d) => d.unitsSold);
 
-      new Chart(document.getElementById("dailyRevenueChart"), {
+      revenueChart = new Chart(document.getElementById("dailyRevenueChart"), {
         type: "line",
         data: {
           labels,
@@ -939,10 +987,21 @@ function generateProductAnalyticsPage(data: {
             tension: 0.25
           }]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (event, elements) => {
+            if (elements.length > 0) {
+              const dataIndex = elements[0].index;
+              const selectedDate = labels[dataIndex];
+              document.getElementById("dayPickerInput").value = selectedDate;
+              showDayBreakdown(selectedDate);
+            }
+          }
+        }
       });
 
-      new Chart(document.getElementById("dailyUnitsChart"), {
+      unitsChart = new Chart(document.getElementById("dailyUnitsChart"), {
         type: "line",
         data: {
           labels,
@@ -955,7 +1014,18 @@ function generateProductAnalyticsPage(data: {
             tension: 0.25
           }]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (event, elements) => {
+            if (elements.length > 0) {
+              const dataIndex = elements[0].index;
+              const selectedDate = labels[dataIndex];
+              document.getElementById("dayPickerInput").value = selectedDate;
+              showDayBreakdown(selectedDate);
+            }
+          }
+        }
       });
 
       new Chart(document.getElementById("topRevenueChart"), {
@@ -1013,6 +1083,51 @@ function generateProductAnalyticsPage(data: {
 
     document.getElementById("clientSearchInput").addEventListener("input", () => {
       applyClientFilter();
+    });
+
+    let revenueChart = null;
+    let unitsChart = null;
+
+    async function showDayBreakdown(date) {
+      const dayBreakdownSection = document.getElementById("dayBreakdownSection");
+      const noDataMessage = document.getElementById("noDataMessage");
+      const dayBreakdownBody = document.getElementById("dayBreakdownBody");
+
+      noDataMessage.style.display = "none";
+      dayBreakdownBody.innerHTML = "Loading...";
+      dayBreakdownSection.style.display = "block";
+
+      try {
+        const response = await fetch("/api/admin/analytics/products/day/" + date);
+        if (!response.ok) throw new Error("Failed to fetch daily breakdown");
+
+        const result = await response.json();
+        const breakdown = result.breakdown || [];
+
+        if (breakdown.length === 0) {
+          dayBreakdownBody.innerHTML = "<tr><td colspan='5' style='text-align: center; padding: 20px; color: #5a6b7a;'>No sales on this date</td></tr>";
+          return;
+        }
+
+        dayBreakdownBody.innerHTML = breakdown.map((row) => {
+          return "<tr>" +
+            "<td>" + row.productName + "</td>" +
+            "<td>" + fmtNumber(row.unitsSold) + "</td>" +
+            "<td class='money'>" + fmtMoney(row.grossRevenue) + "</td>" +
+            "<td>" + fmtNumber(row.orderCount) + "</td>" +
+            "<td class='money'>" + fmtMoney(row.averageSellingPrice) + "</td>" +
+            "</tr>";
+        }).join("");
+      } catch (error) {
+        dayBreakdownBody.innerHTML = "<tr><td colspan='5' style='text-align: center; padding: 20px; color: #9f2a2a;'>Failed to load breakdown</td></tr>";
+      }
+    }
+
+    document.getElementById("dayPickerInput").addEventListener("change", (event) => {
+      const selectedDate = event.target.value;
+      if (selectedDate) {
+        showDayBreakdown(selectedDate);
+      }
     });
 
     document.getElementById("presetSelect").dispatchEvent(new Event("change"));

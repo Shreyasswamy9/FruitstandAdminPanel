@@ -306,10 +306,59 @@ export function getLowPerformingProducts(
   metric: "grossRevenue" | "unitsSold" = "grossRevenue",
   limit = 10
 ): ProductPerformanceRow[] {
-  const filtered = performanceRows.filter((row) => (metric === "grossRevenue" ? row.grossRevenue > 0 : row.unitsSold > 0));
-  return filtered
+  return [...performanceRows]
     .sort((a, b) => (metric === "grossRevenue" ? a.grossRevenue - b.grossRevenue : a.unitsSold - b.unitsSold))
     .slice(0, limit);
+}
+
+interface AllProductsRow {
+  product_id: string | null;
+  product_name: string;
+  units_sold: unknown;
+  gross_revenue: unknown;
+  order_count: unknown;
+  average_quantity_per_order: unknown;
+  average_selling_price: unknown;
+  first_sale_date: Date | null;
+  last_sale_date: Date | null;
+}
+
+export async function getAllProductsWithSalesPerformance(
+  prisma: any,
+  window: AnalyticsWindow
+): Promise<ProductPerformanceRow[]> {
+  const whereSql = salesWhereClause(window.start, window.endExclusive);
+
+  const rows = (await prisma.$queryRaw(Prisma.sql`
+    SELECT
+      p.id AS product_id,
+      p.name AS product_name,
+      COALESCE(SUM(oi.quantity), 0) AS units_sold,
+      COALESCE(SUM(oi.total_price), 0) AS gross_revenue,
+      COUNT(DISTINCT o.id) AS order_count,
+      COALESCE(SUM(oi.quantity)::numeric / NULLIF(COUNT(DISTINCT o.id), 0), 0) AS average_quantity_per_order,
+      COALESCE(SUM(oi.total_price)::numeric / NULLIF(SUM(oi.quantity), 0), 0) AS average_selling_price,
+      MIN(CASE WHEN o.id IS NOT NULL THEN o.created_at::date ELSE NULL END) AS first_sale_date,
+      MAX(CASE WHEN o.id IS NOT NULL THEN o.created_at::date ELSE NULL END) AS last_sale_date
+    FROM public.products p
+    LEFT JOIN public.order_items oi ON p.id = oi.product_id
+    LEFT JOIN public.orders o ON o.id = oi.order_id AND ${whereSql}
+    WHERE p.is_active IS NOT FALSE
+    GROUP BY p.id, p.name
+    ORDER BY gross_revenue ASC, product_name ASC
+  `)) as AllProductsRow[];
+
+  return rows.map((row) => ({
+    productId: row.product_id ?? "unknown",
+    productName: row.product_name,
+    unitsSold: toNumber(row.units_sold),
+    grossRevenue: toNumber(row.gross_revenue),
+    orderCount: toNumber(row.order_count),
+    averageQuantityPerOrder: toNumber(row.average_quantity_per_order),
+    averageSellingPrice: toNumber(row.average_selling_price),
+    firstSaleDate: row.first_sale_date ? isoDate(new Date(row.first_sale_date)) : null,
+    lastSaleDate: row.last_sale_date ? isoDate(new Date(row.last_sale_date)) : null
+  }));
 }
 
 async function getWindowSummary(prisma: any, productId: string, window: AnalyticsWindow): Promise<{ unitsSold: number; revenue: number; orderCount: number }> {
@@ -417,4 +466,55 @@ export async function getProductDetailMetrics(
       averageSellingPrice: toNumber(row.average_selling_price)
     }))
   };
+}
+
+interface DailyProductBreakdownRow {
+  product_id: string;
+  product_name: string;
+  units_sold: unknown;
+  gross_revenue: unknown;
+  order_count: unknown;
+  average_selling_price: unknown;
+}
+
+export async function getDailyProductBreakdown(
+  prisma: any,
+  date: string
+): Promise<ProductPerformanceRow[]> {
+  // Parse date as YYYY-MM-DD and create UTC bounds for that day
+  const [year, month, day] = date.split("-").map(Number);
+  const dayStart = new Date(Date.UTC(year, month - 1, day));
+  const dayEnd = new Date(Date.UTC(year, month - 1, day + 1));
+
+  const rows = (await prisma.$queryRaw(Prisma.sql`
+    SELECT
+      p.id AS product_id,
+      p.name AS product_name,
+      COALESCE(SUM(oi.quantity), 0) AS units_sold,
+      COALESCE(SUM(oi.total_price), 0) AS gross_revenue,
+      COUNT(DISTINCT o.id) AS order_count,
+      COALESCE(SUM(oi.total_price)::numeric / NULLIF(SUM(oi.quantity), 0), 0) AS average_selling_price
+    FROM public.products p
+    LEFT JOIN public.order_items oi ON p.id = oi.product_id
+    LEFT JOIN public.orders o ON o.id = oi.order_id
+      AND o.created_at >= ${dayStart}::timestamp
+      AND o.created_at < ${dayEnd}::timestamp
+      AND (o.payment_status IN ('paid', 'succeeded', 'completed') OR o.status IN ('completed', 'fulfilled', 'shipped', 'delivered'))
+    WHERE p.is_active IS NOT FALSE
+    GROUP BY p.id, p.name
+    HAVING COALESCE(SUM(oi.quantity), 0) > 0 OR COUNT(DISTINCT o.id) > 0
+    ORDER BY gross_revenue DESC, product_name ASC
+  `)) as DailyProductBreakdownRow[];
+
+  return rows.map((row) => ({
+    productId: row.product_id,
+    productName: row.product_name,
+    unitsSold: toNumber(row.units_sold),
+    grossRevenue: toNumber(row.gross_revenue),
+    orderCount: toNumber(row.order_count),
+    averageQuantityPerOrder: toNumber(row.order_count) > 0 ? toNumber(row.units_sold) / toNumber(row.order_count) : 0,
+    averageSellingPrice: toNumber(row.average_selling_price),
+    firstSaleDate: null,
+    lastSaleDate: null
+  }));
 }
