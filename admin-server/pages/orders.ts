@@ -819,13 +819,12 @@ export function registerOrdersRoutes(
       // Get the PDF content
       const pdfBuffer = await labelResponse.arrayBuffer();
 
-      // Prepare a safe filename using the customer's name, fallback to tracking number or order ID
-      let baseName = order.shipping_name
-        ? `${order.shipping_name.replace(/[^a-zA-Z0-9-_]/g, '_')}-shipping-label`
-        : order.tracking_number
-          ? `${order.tracking_number}-shipping-label`
-          : `${id}-shipping-label`;
-      baseName = baseName.replace(/_+/g, '_'); // Collapse multiple underscores
+      // Prepare a safe filename using the customer's name, order number, fallback to tracking number or order ID
+      const customerName = order.shipping_name
+        ? order.shipping_name.replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_').replace(/_+/g, '_')
+        : 'Customer';
+      const orderNumber = order.order_number || id;
+      let baseName = `${customerName}_Order_${orderNumber}-shipping-label`;
       const filename = `${baseName}.pdf`;
 
       // Set headers to force download
@@ -1061,6 +1060,9 @@ function generateOrdersPage(req: any) {
         .back-btn { background: #6c757d; color: white; padding: 12px 18px; border: none; border-radius: 10px; text-decoration: none; min-height: 44px; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-size: 14px; }
         .back-btn:active { opacity: 0.85; }
         .card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
+        
+        /* Desktop Table View */
+        .table-container { display: block; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
         th { background: #f8f9fa; font-weight: 600; }
@@ -1078,15 +1080,50 @@ function generateOrdersPage(req: any) {
         .status-step.active .status-step-dot { background: #667eea; }
         .status-step-label { font-weight: 600; color: #2d3748; }
         .status-step-meta { font-size: 12px; color: #4a5568; }
+        
+        /* Mobile Card View */
+        .orders-grid { display: none; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+        .order-card { background: white; border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.2s ease; border: 1px solid transparent; }
+        .order-card:active { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+        .order-card:hover { border-color: #667eea; }
+        .order-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 8px; }
+        .order-card-number { font-size: 18px; font-weight: 700; color: #333; }
+        .order-card-total { font-size: 16px; font-weight: 700; color: #667eea; }
+        .order-card-customer { margin-bottom: 12px; }
+        .order-card-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; margin-bottom: 4px; }
+        .order-card-text { font-size: 13px; color: #2d3748; line-height: 1.4; }
+        .order-card-address { font-size: 12px; color: #666; line-height: 1.4; margin-top: 8px; }
+        .order-card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid #eee; gap: 8px; }
+        .order-card-date { font-size: 12px; color: #718096; }
+        .order-card-status { padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+        
         .no-results { text-align: center; padding: 40px 20px; color: #999; }
-        @media (max-width: 480px) {
+        
+        @media (max-width: 768px) {
           .header { padding: 12px; }
-          .header h1 { font-size: 20px; margin: 0; }
-          .main { padding: 12px; }
-          table { font-size: 13px; }
-          th, td { padding: 10px 8px; }
-          .card { border-radius: 10px; }
+          .header h1 { font-size: 18px; margin: 0; }
+          .main { padding: 12px; max-width: 100%; }
           .search-input { padding: 11px 14px; font-size: 14px; }
+          
+          /* Switch to card view */
+          .table-container { display: none; }
+          .orders-grid { display: grid; }
+          .order-card { padding: 12px; }
+          .order-card-number { font-size: 16px; }
+          .order-card-total { font-size: 14px; }
+          .order-card-text { font-size: 12px; }
+          .order-card-address { font-size: 11px; }
+          .order-card-date { font-size: 11px; }
+          .order-card-status { font-size: 10px; padding: 3px 8px; }
+          .order-card-header { margin-bottom: 10px; }
+          .order-card-customer { margin-bottom: 10px; }
+          .order-card-footer { padding-top: 10px; gap: 6px; }
+        }
+        
+        @media (max-width: 480px) {
+          .orders-grid { grid-template-columns: 1fr; }
+          .order-card-header { margin-bottom: 8px; }
+          .main { padding: 10px; }
         }
       </style>
     </head>
@@ -1100,7 +1137,9 @@ function generateOrdersPage(req: any) {
           <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by order number, customer name, or address...">
           <div class="search-info" id="searchInfo"></div>
         </div>
-        <div class="card">
+        
+        <!-- Desktop Table View -->
+        <div class="card table-container">
           <table>
             <thead>
               <tr>
@@ -1113,10 +1152,15 @@ function generateOrdersPage(req: any) {
                 <th>Date</th>
               </tr>
             </thead>
-            <tbody id="orders-body">
+            <tbody id="orders-body-table">
               <tr><td colspan="7" style="text-align:center">Loading...</td></tr>
             </tbody>
           </table>
+        </div>
+        
+        <!-- Mobile Card View -->
+        <div class="orders-grid" id="orders-body-grid">
+          <div style="grid-column: 1/-1; text-align: center; padding: 40px 0; color: #999;">Loading...</div>
         </div>
       </div>
       <script>
@@ -1150,13 +1194,17 @@ function generateOrdersPage(req: any) {
         });
 
         function renderOrders(orders, searchQuery = '') {
-          const tbody = document.getElementById('orders-body');
+          const tbodyTable = document.getElementById('orders-body-table');
+          const gridContainer = document.getElementById('orders-body-grid');
           const searchInfo = document.getElementById('searchInfo');
 
           if (!orders.length) {
-            tbody.innerHTML = searchQuery 
+            tbodyTable.innerHTML = searchQuery 
               ? \`<tr><td colspan="7" style="text-align:center">No orders found matching "\${searchQuery}"</td></tr>\`
               : '<tr><td colspan="7" style="text-align:center">No orders found</td></tr>';
+            gridContainer.innerHTML = searchQuery
+              ? \`<div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; color: #999;">No orders found matching "\${searchQuery}"</div>\`
+              : '<div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; color: #999;">No orders found</div>';
             searchInfo.textContent = searchQuery ? \`Found 0 results\` : '';
             return;
           }
@@ -1169,7 +1217,8 @@ function generateOrdersPage(req: any) {
             return date.toLocaleString();
           };
 
-          tbody.innerHTML = orders.map(o => {
+          // Render Table View
+          tbodyTable.innerHTML = orders.map(o => {
             const receivedMeta = \`\${o.receivedName || '—'} • \${formatDate(o.createdAt)}\`;
             const fulfilledMeta = \`\${o.fulfilledByName ? 'by ' + o.fulfilledByName : 'Pending'}\${o.fulfilledAt ? ' • ' + formatDate(o.fulfilledAt) : ''}\`;
             const shippedMeta = o.shippedAt ? formatDate(o.shippedAt) : 'Awaiting label';
@@ -1181,7 +1230,7 @@ function generateOrdersPage(req: any) {
             const lifecycleStatusClass = lifecycleStatus.toLowerCase();
 
             return \`
-              <tr onclick="location.href='/orders/\${o.id}' + session">
+              <tr onclick="location.href='/orders/\${o.id}' + session" style="cursor: pointer;">
                 <td style="font-weight: 600;">\${o.orderNumber || o.id}</td>
                 <td>
                   <div class="customer-name">\${o.receivedName || '-'}</div>
@@ -1218,6 +1267,38 @@ function generateOrdersPage(req: any) {
                 <td><span class="status status-\${lifecycleStatusClass}">\${lifecycleStatus}</span></td>
                 <td>\${formatDate(o.createdAt)}</td>
               </tr>
+            \`;
+          }).join('');
+
+          // Render Mobile Card View
+          gridContainer.innerHTML = orders.map(o => {
+            const lifecycleStatus = o.shippedAt ? 'Shipped' : (o.fulfilledAt ? 'Fulfilled' : 'Received');
+            const lifecycleStatusClass = lifecycleStatus.toLowerCase();
+            const shortDate = (value) => {
+              if (!value) return '-';
+              const date = new Date(value);
+              return date.toLocaleDateString();
+            };
+
+            return \`
+              <div class="order-card" onclick="location.href='/orders/\${o.id}' + session">
+                <div class="order-card-header">
+                  <div class="order-card-number">#\${o.orderNumber || o.id}</div>
+                  <div class="order-card-total">$\${(o.totalAmount || 0).toFixed(2)}</div>
+                </div>
+                <div class="order-card-customer">
+                  <div class="order-card-label">📦 Customer</div>
+                  <div class="order-card-text">\${o.receivedName || 'Unknown'}</div>
+                </div>
+                <div class="order-card-address">
+                  <div class="order-card-label">📍 Address</div>
+                  <div class="order-card-text">\${o.shippingAddress ? o.shippingAddress.substring(0, 60) + (o.shippingAddress.length > 60 ? '...' : '') : 'N/A'}</div>
+                </div>
+                <div class="order-card-footer">
+                  <div class="order-card-date">\${shortDate(o.createdAt)}</div>
+                  <span class="order-card-status status-\${lifecycleStatusClass}">\${lifecycleStatus}</span>
+                </div>
+              </div>
             \`;
           }).join('');
         }
@@ -1343,12 +1424,12 @@ function generateOrderDetailPage(req: any) {
       </div>
 
       <!-- Shipping Label Modal -->
-      <div id="label-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;overflow:hidden">
-        <div style="background:white;border-radius:12px;padding:0;max-width:520px;width:95%;height:auto;max-height:95vh;box-shadow:0 20px 60px rgba(0,0,0,0.3);display:flex;flex-direction:column;overflow:hidden">
+      <div id="label-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;overflow:hidden;padding:10px">
+        <div style="background:white;border-radius:12px;padding:0;max-width:520px;width:100%;height:auto;max-height:calc(100vh - 20px);box-shadow:0 20px 60px rgba(0,0,0,0.3);display:flex;flex-direction:column;overflow:hidden" id="modal-content">
           
           <!-- Header with step indicator -->
-          <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;border-radius:12px 12px 0 0">
-            <h2 style="margin:0;font-size:22px">Create Shipping Label</h2>
+          <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:16px;border-radius:12px 12px 0 0">
+            <h2 style="margin:0;font-size:clamp(18px,5vw,22px)">Create Shipping Label</h2>
             <div style="margin-top:12px;display:flex;gap:8px">
               <div style="flex:1;height:4px;background:rgba(255,255,255,0.3);border-radius:2px;transition:all 0.3s" id="step-indicator-1"></div>
               <div style="flex:1;height:4px;background:rgba(255,255,255,0.3);border-radius:2px;transition:all 0.3s" id="step-indicator-2"></div>
@@ -1359,12 +1440,12 @@ function generateOrderDetailPage(req: any) {
           </div>
 
           <!-- Content -->
-          <div style="overflow-y:auto;flex:1;padding:24px">
+          <div style="overflow-y:auto;flex:1;padding:clamp(14px,4vw,24px)">
             
             <!-- Step 1: Template Selection -->
             <div id="step-1" style="display:block">
-              <h3 style="margin:0 0 16px 0;color:#2d3748">📦 Select Package Template</h3>
-              <div id="template-buttons" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px"></div>
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📦 Select Package Template</h3>
+              <div id="template-buttons" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(110px,25vw,140px),1fr));gap:10px;margin-bottom:16px"></div>
               <div style="padding:12px;background:#f0f7ff;border-left:4px solid #4299e1;border-radius:6px;font-size:13px;color:#2c5aa0">
                 ℹ️ Templates store pre-set dimensions and weight for quick access.
               </div>
@@ -1372,89 +1453,89 @@ function generateOrderDetailPage(req: any) {
 
             <!-- Step 2: Dimensions & Weight -->
             <div id="step-2" style="display:none">
-              <h3 style="margin:0 0 16px 0;color:#2d3748">📏 Package Dimensions & Weight</h3>
-              <div style="margin-bottom:16px">
-                <label style="display:block;margin-bottom:8px;font-weight:600;font-size:13px;color:#2d3748">Dimensions (inches)</label>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📏 Package Dimensions & Weight</h3>
+              <div style="margin-bottom:14px">
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">Dimensions (inches)</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
                   <div>
-                    <input type="number" id="pkg-length" value="5" min="1" placeholder="Length" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:13px">
-                    <div style="font-size:11px;color:#718096;margin-top:4px;text-align:center;font-weight:600">L</div>
+                    <input type="number" id="pkg-length" value="5" min="1" placeholder="Length" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">L</div>
                   </div>
                   <div>
-                    <input type="number" id="pkg-width" value="5" min="1" placeholder="Width" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:13px">
-                    <div style="font-size:11px;color:#718096;margin-top:4px;text-align:center;font-weight:600">W</div>
+                    <input type="number" id="pkg-width" value="5" min="1" placeholder="Width" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">W</div>
                   </div>
                   <div>
-                    <input type="number" id="pkg-height" value="5" min="1" placeholder="Height" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:13px">
-                    <div style="font-size:11px;color:#718096;margin-top:4px;text-align:center;font-weight:600">H</div>
+                    <input type="number" id="pkg-height" value="5" min="1" placeholder="Height" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">H</div>
                   </div>
                 </div>
               </div>
-              <div style="margin-bottom:16px">
-                <label style="display:block;margin-bottom:8px;font-weight:600;font-size:13px;color:#2d3748">Weight (lbs)</label>
-                <input type="number" id="pkg-weight" value="2" min="0.1" step="0.1" placeholder="Weight" style="width:100%;padding:10px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:13px">
+              <div style="margin-bottom:12px">
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">Weight (lbs)</label>
+                <input type="number" id="pkg-weight" value="2" min="0.1" step="0.1" placeholder="Weight" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
               </div>
             </div>
 
             <!-- Step 3: Shipping Service -->
             <div id="step-3" style="display:none">
-              <h3 style="margin:0 0 16px 0;color:#2d3748">🚚 Select Shipping Service</h3>
-              <div id="service-options" style="width:100%;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px"></div>
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">🚚 Select Shipping Service</h3>
+              <div id="service-options" style="width:100%;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(150px,40vw,200px),1fr));gap:10px;margin-bottom:10px"></div>
             </div>
 
             <!-- Step 4: Addresses -->
             <div id="step-4" style="display:none">
-              <h3 style="margin:0 0 16px 0;color:#2d3748">📍 Confirm Addresses</h3>
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📍 Confirm Addresses</h3>
               
-              <div style="margin-bottom:16px;padding:12px;background:#f0fff4;border-radius:8px;border-left:4px solid #48bb78">
-                <label style="display:block;margin-bottom:10px;font-weight:600;font-size:13px;color:#2d3748">📬 Ship To (Customer Address)</label>
-                <div style="display:grid;gap:8px;font-size:13px">
-                  <input type="text" id="dest-name" placeholder="Customer name" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                  <input type="text" id="dest-street1" placeholder="Street address" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                  <input type="text" id="dest-street2" placeholder="Apt/Unit (optional)" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                  <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">
-                    <input type="text" id="dest-city" placeholder="City" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                    <input type="text" id="dest-state" placeholder="State" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
+              <div style="margin-bottom:12px;padding:10px;background:#f0fff4;border-radius:8px;border-left:4px solid #48bb78">
+                <label style="display:block;margin-bottom:8px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">📬 Ship To (Customer Address)</label>
+                <div style="display:grid;gap:6px;font-size:clamp(11px,3vw,13px)">
+                  <input type="text" id="dest-name" placeholder="Customer name" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <input type="text" id="dest-street1" placeholder="Street address" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <input type="text" id="dest-street2" placeholder="Apt/Unit (optional)" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px">
+                    <input type="text" id="dest-city" placeholder="City" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <input type="text" id="dest-state" placeholder="State" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                   </div>
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                    <input type="text" id="dest-zip" placeholder="ZIP" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                    <input type="text" id="dest-country" placeholder="US" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <input type="text" id="dest-zip" placeholder="ZIP" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <input type="text" id="dest-country" placeholder="US" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                   </div>
                 </div>
               </div>
 
-              <div style="padding:12px;background:#f0f4ff;border-radius:8px;border-left:4px solid #667eea">
-                <label style="display:block;margin-bottom:10px;font-weight:600;font-size:13px;color:#2d3748">📦 Return Address (Your Address)</label>
-                <div style="display:grid;gap:8px;font-size:13px">
-                  <input type="text" id="ship-name" value="FRUITSTAND" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                  <input type="text" id="ship-street1" value="37-30 Review Avenue" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                  <input type="text" id="ship-street2" value="Ste 202" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                  <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">
-                    <input type="text" id="ship-city" value="Long Island City" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
-                    <input type="text" id="ship-state" value="NY" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
+              <div style="padding:10px;background:#f0f4ff;border-radius:8px;border-left:4px solid #667eea">
+                <label style="display:block;margin-bottom:8px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">📦 Return Address (Your Address)</label>
+                <div style="display:grid;gap:6px;font-size:clamp(11px,3vw,13px)">
+                  <input type="text" id="ship-name" value="FRUITSTAND" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <input type="text" id="ship-street1" value="37-30 Review Avenue" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <input type="text" id="ship-street2" value="Ste 202" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px">
+                    <input type="text" id="ship-city" value="Long Island City" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <input type="text" id="ship-state" value="NY" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                   </div>
-                  <input type="text" id="ship-zip" value="11101" style="padding:8px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box">
+                  <input type="text" id="ship-zip" value="11101" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                 </div>
               </div>
             </div>
 
             <!-- Step 5: Review & Purchase -->
             <div id="step-5" style="display:none">
-              <h3 style="margin:0 0 16px 0;color:#2d3748">✅ Review & Purchase Label</h3>
-              <div style="padding:16px;background:#f9fafb;border:2px solid #e2e8f0;border-radius:8px;font-size:13px;line-height:1.6;color:#2d3748">
-                <div style="margin-bottom:12px">
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">✅ Review & Purchase Label</h3>
+              <div style="padding:12px;background:#f9fafb;border:2px solid #e2e8f0;border-radius:8px;font-size:clamp(11px,3vw,13px);line-height:1.6;color:#2d3748">
+                <div style="margin-bottom:10px">
                   <strong>Template:</strong> <span id="review-template">-</span>
                 </div>
-                <div style="margin-bottom:12px">
+                <div style="margin-bottom:10px">
                   <strong>Dimensions:</strong> <span id="review-dimensions">-</span>
                 </div>
-                <div style="margin-bottom:12px">
+                <div style="margin-bottom:10px">
                   <strong>Weight:</strong> <span id="review-weight">-</span> lbs
                 </div>
-                <div style="margin-bottom:12px;padding-top:12px;border-top:1px solid #e2e8f0">
+                <div style="margin-bottom:10px;padding-top:10px;border-top:1px solid #e2e8f0">
                   <strong>Shipping Service:</strong> <span id="review-service">-</span>
                 </div>
-                <div style="padding-top:12px;border-top:1px solid #e2e8f0">
+                <div style="padding-top:10px;border-top:1px solid #e2e8f0">
                   <strong>Delivery to:</strong> <span id="review-address">-</span>
                 </div>
               </div>
@@ -1463,11 +1544,11 @@ function generateOrderDetailPage(req: any) {
           </div>
 
           <!-- Footer with buttons -->
-          <div style="padding:16px 24px;border-top:1px solid #e2e8f0;display:flex;gap:10px;justify-content:flex-end;background:#f9fafb;border-radius:0 0 12px 12px">
-            <button onclick="closeLabelModal()" style="background:#e2e8f0;color:#2d3748;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;white-space:nowrap">Cancel</button>
-            <button id="prev-btn" onclick="previousStep()" style="background:#cbd5e0;color:#2d3748;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;white-space:nowrap;display:none">← Back</button>
-            <button id="next-btn" onclick="nextStep()" style="background:#667eea;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;white-space:nowrap">Next →</button>
-            <button id="purchase-btn" onclick="purchaseLabel()" style="background:#48bb78;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s;white-space:nowrap;display:none">Purchase</button>
+          <div style="padding:clamp(10px,3vw,16px);border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;background:#f9fafb;border-radius:0 0 12px 12px">
+            <button onclick="closeLabelModal()" style="background:#e2e8f0;color:#2d3748;border:none;padding:clamp(8px,2vw,10px) clamp(14px,3vw,20px);border-radius:6px;cursor:pointer;font-weight:600;font-size:clamp(12px,3vw,14px);transition:all 0.2s;white-space:nowrap;flex:0 1 auto">Cancel</button>
+            <button id="prev-btn" onclick="previousStep()" style="background:#cbd5e0;color:#2d3748;border:none;padding:clamp(8px,2vw,10px) clamp(12px,2.5vw,16px);border-radius:6px;cursor:pointer;font-weight:600;font-size:clamp(12px,3vw,14px);transition:all 0.2s;white-space:nowrap;display:none;flex:0 1 auto">← Back</button>
+            <button id="next-btn" onclick="nextStep()" style="background:#667eea;color:white;border:none;padding:clamp(8px,2vw,10px) clamp(12px,2.5vw,16px);border-radius:6px;cursor:pointer;font-weight:600;font-size:clamp(12px,3vw,14px);transition:all 0.2s;white-space:nowrap;flex:0 1 auto">Next →</button>
+            <button id="purchase-btn" onclick="purchaseLabel()" style="background:#48bb78;color:white;border:none;padding:clamp(8px,2vw,10px) clamp(12px,2.5vw,16px);border-radius:6px;cursor:pointer;font-weight:600;font-size:clamp(12px,3vw,14px);transition:all 0.2s;white-space:nowrap;display:none;flex:0 1 auto">Purchase</button>
           </div>
         </div>
       </div>
@@ -2019,7 +2100,11 @@ function generateOrderDetailPage(req: any) {
                 optionsDiv.dataset.selected = selectedRateId || '';
 
                 let html = '';
-                const providers = Object.keys(grouped).sort();
+                const providers = Object.keys(grouped).sort((a, b) => {
+                  if (a === 'USPS') return -1;
+                  if (b === 'USPS') return 1;
+                  return a.localeCompare(b);
+                });
                 providers.forEach(provider => {
                   html += '<div style="border:2px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff">';
                   html += '<div style="font-weight:700;font-size:15px;margin-bottom:12px;color:#374151;border-bottom:2px solid #e2e8f0;padding-bottom:10px;text-align:center">' + provider + '</div>';
@@ -2030,11 +2115,7 @@ function generateOrderDetailPage(req: any) {
                     const amount = parseFloat(rate.amount).toFixed(2);
                     const days = rate.estimated_days || '?';
                     const buttonClass = isSelected ? 'ship-rate-btn selected' : 'ship-rate-btn';
-                    const borderColor = isSelected ? '#2563eb' : '#e2e8f0';
-                    const bgGradient = isSelected ? 'linear-gradient(90deg,#e0e7ff 60%,#f8fafc 100%)' : '#fff';
-                    const boxShadow = isSelected ? '0 2px 8px #c7d2fe' : '0 1px 3px #e2e8f0';
-                    const checkmark = isSelected ? '<span style="position:absolute;top:8px;right:10px;color:#2563eb;font-size:16px">✓</span>' : '';
-                    html += '<button type="button" class="' + buttonClass + '" data-rate-id="' + rate.object_id + '" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 14px;border:2px solid ' + borderColor + ';border-radius:10px;background:' + bgGradient + ';color:#222;font-size:13px;cursor:pointer;transition:all 0.18s;font-weight:600;box-shadow:' + boxShadow + ';outline:none;position:relative;white-space:normal;text-align:center;">' + serviceName + '<span style="color:#667eea;font-weight:600;font-size:14px">$' + amount + '</span><span style="color:#718096;font-size:12px">' + days + ' days</span>' + checkmark + '</button>';
+                    html += '<button type="button" class="' + buttonClass + '" data-rate-id="' + rate.object_id + '" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 14px;border:2px solid #e2e8f0;border-radius:10px;background:#fff;color:#222;font-size:13px;cursor:pointer;transition:all 0.18s;font-weight:600;box-shadow:0 1px 3px #e2e8f0;outline:none;position:relative;white-space:normal;text-align:center;">' + serviceName + '<span style="color:#667eea;font-weight:600;font-size:14px">$' + amount + '</span><span style="color:#718096;font-size:12px">' + days + ' days</span><span class="checkmark-icon" style="position:absolute;top:8px;right:10px;color:#2563eb;font-size:16px;display:none">✓</span></button>';
                   });
                   html += '</div></div>';
                 });
@@ -2042,10 +2123,20 @@ function generateOrderDetailPage(req: any) {
 
                 Array.from(optionsDiv.querySelectorAll('.ship-rate-btn')).forEach(btn => {
                   btn.addEventListener('click', function() {
-                    Array.from(optionsDiv.querySelectorAll('.ship-rate-btn')).forEach(b => b.classList.remove('selected'));
+                    // Remove selected class and hide checkmark from all buttons
+                    Array.from(optionsDiv.querySelectorAll('.ship-rate-btn')).forEach(b => {
+                      b.classList.remove('selected');
+                      b.querySelector('.checkmark-icon').style.display = 'none';
+                    });
+                    // Add selected class and show checkmark for clicked button
                     this.classList.add('selected');
+                    this.querySelector('.checkmark-icon').style.display = 'block';
                     optionsDiv.dataset.selected = this.getAttribute('data-rate-id');
                   });
+                  // Show checkmark on initial selected button
+                  if (btn.classList.contains('selected')) {
+                    btn.querySelector('.checkmark-icon').style.display = 'block';
+                  }
                 });
               } else {
                 const errorMsg = res.error || 'No rates available';
@@ -2146,11 +2237,19 @@ function generateOrderDetailPage(req: any) {
 
         function downloadLabel(labelUrl) {
           if (!labelUrl) return;
-          // Use the server endpoint to download (better CORS handling and forced download)
           const orderId = window.location.pathname.split('/').pop();
+          const customerName = window.currentOrder 
+            ? (window.currentOrder.receivedName || window.currentOrder.customerName || window.currentOrder.customer_name || 'Customer')
+            : 'Customer';
+          const orderNumber = window.currentOrder && window.currentOrder.orderNumber 
+            ? window.currentOrder.orderNumber 
+            : orderId;
+          const cleanName = customerName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+          const filename = cleanName + '_Order_' + orderNumber + '-shipping-label.pdf';
+          
           const link = document.createElement('a');
           link.href = '/api/orders/' + orderId + '/download-label';
-          link.download = 'shipping-label.pdf';
+          link.download = filename;
           document.body.appendChild(link);
           link.click();
           link.remove();
