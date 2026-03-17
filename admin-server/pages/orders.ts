@@ -133,6 +133,28 @@ function normalizeVariantDetails(details: any): VariantInfo {
   };
 }
 
+function amountFromStripeCents(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return value / 100;
+}
+
+function formatStripeAddress(address: any): string {
+  if (!address || typeof address !== 'object') {
+    return '';
+  }
+
+  return [
+    address.line1,
+    address.line2,
+    address.city,
+    address.state,
+    address.postal_code,
+    address.country
+  ].filter(Boolean).join(', ');
+}
+
 export function registerOrdersRoutes(
   app: any,
   {
@@ -251,6 +273,63 @@ export function registerOrdersRoutes(
 
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
+      let stripeOrderDetails: any = null;
+
+      if (stripe && (order.stripe_checkout_session_id || order.stripe_payment_intent_id)) {
+        try {
+          let checkoutSession: any = null;
+          let paymentIntent: any = null;
+
+          if (order.stripe_checkout_session_id) {
+            checkoutSession = await stripe.checkout.sessions.retrieve(order.stripe_checkout_session_id, {
+              expand: ['payment_intent']
+            });
+          }
+
+          if (checkoutSession?.payment_intent && typeof checkoutSession.payment_intent === 'object') {
+            paymentIntent = checkoutSession.payment_intent;
+          }
+
+          const paymentIntentId = typeof checkoutSession?.payment_intent === 'string'
+            ? checkoutSession.payment_intent
+            : order.stripe_payment_intent_id;
+
+          if (!paymentIntent && paymentIntentId) {
+            paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+          }
+
+          stripeOrderDetails = {
+            currency: (checkoutSession?.currency || paymentIntent?.currency || 'usd').toUpperCase(),
+            amountSubtotal: amountFromStripeCents(checkoutSession?.amount_subtotal),
+            amountTotal: amountFromStripeCents(checkoutSession?.amount_total),
+            amountCharged: amountFromStripeCents(paymentIntent?.amount_received ?? paymentIntent?.amount),
+            amountDiscount: amountFromStripeCents(checkoutSession?.total_details?.amount_discount),
+            amountShipping: amountFromStripeCents(checkoutSession?.total_details?.amount_shipping),
+            amountTax: amountFromStripeCents(checkoutSession?.total_details?.amount_tax),
+            billingAddress: checkoutSession?.customer_details?.address ?? null,
+            shippingAddress: checkoutSession?.shipping_details?.address ?? null,
+            checkoutSessionId: checkoutSession?.id || order.stripe_checkout_session_id || null,
+            paymentIntentId: paymentIntent?.id || order.stripe_payment_intent_id || null,
+            paymentStatus: checkoutSession?.payment_status || paymentIntent?.status || null
+          };
+        } catch (stripeError: any) {
+          console.warn('Failed to enrich order with Stripe details', {
+            orderId: order.id,
+            checkoutSessionId: order.stripe_checkout_session_id,
+            paymentIntentId: order.stripe_payment_intent_id,
+            message: stripeError?.message
+          });
+        }
+      }
+
+      const resolvedCurrency = stripeOrderDetails?.currency || 'USD';
+      const resolvedSubtotal = stripeOrderDetails?.amountSubtotal ?? Number(order.subtotal ?? 0);
+      const resolvedDiscount = stripeOrderDetails?.amountDiscount ?? Number(order.discount_amount ?? 0);
+      const resolvedShipping = stripeOrderDetails?.amountShipping ?? Number(order.shipping_amount ?? 0);
+      const resolvedTax = stripeOrderDetails?.amountTax ?? Number(order.tax_amount ?? 0);
+      const resolvedTotal = stripeOrderDetails?.amountTotal ?? Number(order.total_amount ?? 0);
+      const resolvedCharged = stripeOrderDetails?.amountCharged ?? resolvedTotal;
+
       // Serialize Decimals
       const serialized = {
         id: order.id,
@@ -300,6 +379,24 @@ export function registerOrdersRoutes(
         customerName: order.shipping_name,
         fulfilledByEmail: order.fulfilled_by?.email,
         fulfilledByProfileName: order.fulfilled_by?.raw_user_meta_data?.name,
+        stripe_checkout_session_id: order.stripe_checkout_session_id,
+        stripe_payment_intent_id: order.stripe_payment_intent_id,
+        purchaseTotals: {
+          currency: resolvedCurrency,
+          subtotal: resolvedSubtotal,
+          discount: resolvedDiscount,
+          shipping: resolvedShipping,
+          tax: resolvedTax,
+          total: resolvedTotal,
+          charged: resolvedCharged
+        },
+        stripePayment: stripeOrderDetails,
+        billing_address: stripeOrderDetails?.billingAddress ?? null,
+        billingAddress: stripeOrderDetails?.billingAddress ?? null,
+        billingAddressText: formatStripeAddress(stripeOrderDetails?.billingAddress),
+        stripe_shipping_address: stripeOrderDetails?.shippingAddress ?? null,
+        stripeShippingAddress: stripeOrderDetails?.shippingAddress ?? null,
+        stripeShippingAddressText: formatStripeAddress(stripeOrderDetails?.shippingAddress),
         order_items: order.order_items.map((i: any) => {
           const variant = normalizeVariantDetails(i.variant_details);
           return {
@@ -1406,6 +1503,41 @@ function generateOrderDetailPage(req: any) {
               <tbody></tbody>
             </table>
           </div>
+
+          <div class="card">
+            <h3>Customer</h3>
+            <div id="c-name" style="font-weight:600">-</div>
+            <div id="c-email">-</div>
+          </div>
+
+          <div class="card">
+            <h3>Shipping Address</h3>
+            <div id="ship-recipient" style="font-weight:600">-</div>
+            <div id="ship-email">-</div>
+            <div id="ship-phone">-</div>
+            <div id="ship-address" style="font-size:13px;color:#666;margin-top:5px">-</div>
+          </div>
+
+          <div class="card">
+            <h3>Billing Address</h3>
+            <div id="bill-address" style="font-size:13px;color:#666">-</div>
+            <div id="bill-address-source" style="font-size:12px;color:#718096;margin-top:6px">Source: Stripe Checkout</div>
+          </div>
+
+          <div class="card">
+            <h3>Payment Breakdown</h3>
+            <div class="info-row"><div class="info-label">Charged</div><div id="p-charged">-</div></div>
+            <div class="info-row"><div class="info-label">Subtotal</div><div id="p-subtotal">-</div></div>
+            <div class="info-row"><div class="info-label">Discount</div><div id="p-discount">-</div></div>
+            <div class="info-row"><div class="info-label">Shipping</div><div id="p-shipping">-</div></div>
+            <div class="info-row"><div class="info-label">Tax</div><div id="p-tax">-</div></div>
+            <div class="info-row"><div class="info-label">Total</div><div id="p-total">-</div></div>
+            <div class="info-row"><div class="info-label">Payment Status</div><div id="p-status">-</div></div>
+            <div class="info-row"><div class="info-label">Currency</div><div id="p-currency">-</div></div>
+            <div class="info-row"><div class="info-label">Stripe Payment Intent</div><div id="p-payment-intent" style="font-family:monospace;font-size:12px;word-break:break-all">-</div></div>
+            <div class="info-row"><div class="info-label">Stripe Checkout Session</div><div id="p-checkout-session" style="font-family:monospace;font-size:12px;word-break:break-all">-</div></div>
+            <div class="info-row"><div class="info-label">Checkout Shipping Address</div><div id="stripe-s-address" style="font-size:13px;color:#666">-</div></div>
+          </div>
         </div>
         
         <div class="sidebar">
@@ -1422,12 +1554,6 @@ function generateOrderDetailPage(req: any) {
             <div class="status-flow" id="status-flow"></div>
           </div>
           
-          <div class="card">
-            <h3>Customer</h3>
-            <div id="c-name" style="font-weight:600">-</div>
-            <div id="c-email">-</div>
-            <div id="c-address" style="font-size:13px;color:#666;margin-top:5px">-</div>
-          </div>
         </div>
       </div>
 
@@ -1568,6 +1694,34 @@ function generateOrderDetailPage(req: any) {
         const formatDateTime = (value) => {
           if (!value) return '-';
           return new Date(value).toLocaleString();
+        };
+
+        const formatMoney = (value, currencyCode) => {
+          if (typeof value !== 'number' || !Number.isFinite(value)) {
+            return '-';
+          }
+
+          const normalized = (currencyCode || 'USD').toUpperCase();
+          try {
+            return new Intl.NumberFormat(undefined, { style: 'currency', currency: normalized }).format(value);
+          } catch {
+            return '$' + value.toFixed(2) + ' ' + normalized;
+          }
+        };
+
+        const formatAddress = (address) => {
+          if (!address || typeof address !== 'object') {
+            return '';
+          }
+
+          return [
+            address.line1,
+            address.line2,
+            address.city,
+            address.state,
+            address.postal_code,
+            address.country
+          ].filter(Boolean).join(', ');
         };
 
         const buildStatusFlow = (order) => {
@@ -1747,7 +1901,7 @@ function generateOrderDetailPage(req: any) {
               document.getElementById('c-name').textContent = customerName || '—';
               document.getElementById('c-email').textContent = customerEmail || '—';
 
-              document.getElementById('c-address').textContent = [
+              const shippingAddressText = [
                 o.shipping_address_line1,
                 o.shipping_address_line2,
                 o.shipping_city,
@@ -1755,6 +1909,29 @@ function generateOrderDetailPage(req: any) {
                 o.shipping_postal_code,
                 o.shipping_country
               ].filter(Boolean).join(', ');
+
+              document.getElementById('ship-recipient').textContent = o.shipping_name || customerName || '—';
+              document.getElementById('ship-email').textContent = o.shipping_email || customerEmail || '—';
+              document.getElementById('ship-phone').textContent = o.shipping_phone || '—';
+              document.getElementById('ship-address').textContent = shippingAddressText || '—';
+
+              const payment = o.purchaseTotals || {};
+              const paymentCurrency = payment.currency || 'USD';
+              const billingAddressText = o.billingAddressText || formatAddress(o.billingAddress || o.billing_address) || 'Not captured by Stripe';
+              const stripeShippingAddressText = o.stripeShippingAddressText || formatAddress(o.stripeShippingAddress || o.stripe_shipping_address) || 'Not captured by Stripe';
+
+              document.getElementById('p-charged').textContent = formatMoney(payment.charged, paymentCurrency);
+              document.getElementById('p-subtotal').textContent = formatMoney(payment.subtotal, paymentCurrency);
+              document.getElementById('p-discount').textContent = formatMoney(payment.discount, paymentCurrency);
+              document.getElementById('p-shipping').textContent = formatMoney(payment.shipping, paymentCurrency);
+              document.getElementById('p-tax').textContent = formatMoney(payment.tax, paymentCurrency);
+              document.getElementById('p-total').textContent = formatMoney(payment.total, paymentCurrency);
+              document.getElementById('p-status').textContent = (o.stripePayment && o.stripePayment.paymentStatus) || o.paymentStatus || o.payment_status || 'Not available';
+              document.getElementById('p-currency').textContent = paymentCurrency;
+              document.getElementById('p-payment-intent').textContent = (o.stripePayment && o.stripePayment.paymentIntentId) || o.stripe_payment_intent_id || 'Not available';
+              document.getElementById('p-checkout-session').textContent = (o.stripePayment && o.stripePayment.checkoutSessionId) || o.stripe_checkout_session_id || 'Not available';
+              document.getElementById('bill-address').textContent = billingAddressText;
+              document.getElementById('stripe-s-address').textContent = stripeShippingAddressText;
 
               const items = o.order_items || [];
               document.getElementById('items-table').querySelector('tbody').innerHTML = items.map(i => {

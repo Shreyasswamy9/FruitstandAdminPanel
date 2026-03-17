@@ -11,6 +11,7 @@ import loginPages from "../pages/login";
 import { registerOrdersRoutes } from "../pages/orders";
 import { registerProductsRoutes } from "../pages/products";
 import { registerAnalyticsRoutes } from "../pages/analytics";
+import { registerProductAnalyticsRoutes } from "../pages/productAnalytics";
 import { registerCommunicationsRoutes } from "../pages/communications";
 import { registerActivityRoutes } from "../pages/activity";
 import { registerInventoryRoutes } from "../pages/inventory";
@@ -200,7 +201,7 @@ export function createAdminApp(): express.Express {
 			<div class="grid">
 				<a class="card" href="/orders"><div class="icon">📦</div><div class="title">Orders</div><div class="desc">Stripe orders</div></a>
 				<a class="card" href="/products"><div class="icon">👕</div><div class="title">Products</div><div class="desc">Catalog</div></a>
-				<a class="card" href="/analytics"><div class="icon">📈</div><div class="title">Analytics</div><div class="desc">Insights</div></a>
+				<a class="card" href="/admin/analytics/products"><div class="icon">📈</div><div class="title">Analytics</div><div class="desc">Product sales insights</div></a>
 				<a class="card" href="/communications"><div class="icon">💬</div><div class="title">Comms</div><div class="desc">Messages</div></a>
 				<a class="card" href="/customers"><div class="icon">👥</div><div class="title">Customers</div><div class="desc">Profiles</div></a>
 				<a class="card" href="/collections"><div class="icon">🎨</div><div class="title">Collections</div><div class="desc">Seasonal</div></a>
@@ -241,6 +242,7 @@ export function createAdminApp(): express.Express {
 	registerOrdersRoutes(app, { requireAuth, prisma, logActivity });
 	registerProductsRoutes(app, { prisma, logActivity, requireAuth, requireAdmin });
 	registerAnalyticsRoutes(app, { requireAuth });
+	registerProductAnalyticsRoutes(app, { requireAuth, prismaClient: prisma });
 	registerCommunicationsRoutes(app, { requireAuth });
 	registerActivityRoutes(app, { prisma, logActivity, requireAdmin });
 	registerInventoryRoutes(app, { requireAuth });
