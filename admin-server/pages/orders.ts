@@ -728,13 +728,24 @@ export function registerOrdersRoutes(
       // Use custom address if provided, otherwise use default
       let fromAddress = addressFrom || {
         name: "FRUITSTAND",
-        street1: "37-30 Review Avenue",
-        street2: "Suite 202",
+        street1: "37-30 Review Avenue Ste 202",
         city: "Long Island City",
         state: "NY",
         zip: "11101",
-        country: "US"
+        country: "US",
+        phone: "3473068055",
+        email: "info@fruitstandny.com"
       };
+      
+      // Ensure email is always present for USPS and other carriers
+      if (!fromAddress.email) {
+        fromAddress.email = "info@fruitstandny.com";
+      }
+      
+      // Ensure phone is always present for carrier requirements
+      if (!fromAddress.phone) {
+        fromAddress.phone = "3473068055";
+      }
       
       // Normalize the return address
       fromAddress = normalizeAddress(fromAddress);
@@ -754,6 +765,7 @@ export function registerOrdersRoutes(
           phone: order.shipping_phone
         };
         // Create shipment using individual address fields
+        console.log('SHIPPO REQUEST - FROM:', JSON.stringify(fromAddress), 'TO:', JSON.stringify(resolvedAddressTo));
         const shipment = await shippoClient.shipments.create({
           addressFrom: fromAddress,
           addressTo: resolvedAddressTo,
@@ -1068,25 +1080,33 @@ export function registerOrdersRoutes(
         city: "Long Island City",
         state: "NY",
         zip: "11101",
-        country: "US"
+        country: "US",
+        phone: "it puts a tickmark 3473068055"
       };
       
       // Normalize the return address
       fromAddress = normalizeAddress(fromAddress);
+      
+      // Ensure phone is always present for carrier requirements
+      if (!fromAddress.phone) {
+        fromAddress.phone = "3473068055";
+      }
 
+      const labelAddressTo = {
+        name: order.shipping_name || order.shipping_email,
+        street1: order.shipping_address_line1,
+        street2: order.shipping_address_line2,
+        city: order.shipping_city,
+        state: order.shipping_state,
+        zip: order.shipping_postal_code,
+        country: order.shipping_country || 'US',
+        email: order.shipping_email,
+        phone: order.shipping_phone
+      };
+      console.log('LABEL SHIPPO REQUEST - FROM:', JSON.stringify(fromAddress), 'TO:', JSON.stringify(labelAddressTo));
       const shipment = await shippoClient.shipments.create({
         addressFrom: fromAddress,
-        addressTo: {
-          name: order.shipping_name || order.shipping_email,
-          street1: order.shipping_address_line1,
-          street2: order.shipping_address_line2,
-          city: order.shipping_city,
-          state: order.shipping_state,
-          zip: order.shipping_postal_code,
-          country: order.shipping_country || 'US',
-          email: order.shipping_email,
-          phone: order.shipping_phone
-        },
+        addressTo: labelAddressTo,
         parcels: [{
           length: "5",
           width: "5",
@@ -1673,6 +1693,10 @@ function generateOrderDetailPage(req: any) {
                     <input type="text" id="ship-state" value="NY" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                   </div>
                   <input type="text" id="ship-zip" value="11101" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <input type="email" id="ship-email" value="info@fruitstandny.com" placeholder="Email (required for USPS)" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <input type="tel" id="ship-phone" placeholder="Phone" value="3473068055" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  </div>
                 </div>
               </div>
             </div>
@@ -2224,8 +2248,10 @@ function generateOrderDetailPage(req: any) {
             b.style.borderColor = '#e2e8f0';
             b.style.background = '#fff';
             b.style.boxShadow = '0 1px 3px #e2e8f0';
-            const checkmark = b.querySelector('span');
-            if (checkmark && checkmark.innerText === '✓') checkmark.remove();
+            const spans = b.querySelectorAll('span');
+            spans.forEach(span => {
+              if (span.innerText === '✓') span.remove();
+            });
           });
           
           btn.classList.add('selected');
@@ -2273,7 +2299,9 @@ function generateOrderDetailPage(req: any) {
             city: document.getElementById('ship-city').value,
             state: document.getElementById('ship-state').value,
             zip: document.getElementById('ship-zip').value,
-            country: 'US'
+            country: 'US',
+            email: document.getElementById('ship-email').value,
+            phone: document.getElementById('ship-phone').value
           };
 
           const addressTo = {
@@ -2383,7 +2411,9 @@ function generateOrderDetailPage(req: any) {
               street2: document.getElementById('ship-street2').value,
               city: document.getElementById('ship-city').value,
               state: document.getElementById('ship-state').value,
-              zip: document.getElementById('ship-zip').value
+              zip: document.getElementById('ship-zip').value,
+              email: document.getElementById('ship-email').value,
+              phone: document.getElementById('ship-phone').value
             }
           };
 
