@@ -219,6 +219,12 @@ export function registerOrdersRoutes(
           shipping_city: true,
           shipping_state: true,
           shipping_postal_code: true,
+          billing_address_line1: true,
+          billing_address_line2: true,
+          billing_city: true,
+          billing_state: true,
+          billing_postal_code: true,
+          billing_country: true,
           fulfilled_at: true,
           shipped_at: true,
           fulfilled_by_name: true,
@@ -235,6 +241,7 @@ export function registerOrdersRoutes(
         createdAt: o.created_at,
         receivedName: o.shipping_name,
         shippingAddress: [o.shipping_address_line1, o.shipping_address_line2, o.shipping_city, o.shipping_state, o.shipping_postal_code].filter(Boolean).join(', '),
+        billingAddress: [o.billing_address_line1, o.billing_address_line2, o.billing_city, o.billing_state, o.billing_postal_code].filter(Boolean).join(', '),
         fulfilledAt: o.fulfilled_at,
         fulfilledById: o.fulfilled_by_id,
         fulfilledByName: o.fulfilled_by_name,
@@ -272,6 +279,23 @@ export function registerOrdersRoutes(
       });
 
       if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      // Get billing address from orders table fields
+      const dbBillingAddress = order.billing_address_line1 || order.billing_city ? {
+        line1: order.billing_address_line1,
+        line2: order.billing_address_line2,
+        city: order.billing_city,
+        state: order.billing_state,
+        postal_code: order.billing_postal_code,
+        country: order.billing_country
+      } : null;
+
+      // Log billing address
+      console.log('Order billing address', {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        billingAddress: dbBillingAddress
+      });
 
       let stripeOrderDetails: any = null;
 
@@ -391,9 +415,9 @@ export function registerOrdersRoutes(
           charged: resolvedCharged
         },
         stripePayment: stripeOrderDetails,
-        billing_address: stripeOrderDetails?.billingAddress ?? null,
-        billingAddress: stripeOrderDetails?.billingAddress ?? null,
-        billingAddressText: formatStripeAddress(stripeOrderDetails?.billingAddress),
+        billing_address: dbBillingAddress ?? stripeOrderDetails?.billingAddress ?? null,
+        billingAddress: dbBillingAddress ?? stripeOrderDetails?.billingAddress ?? null,
+        billingAddressText: formatStripeAddress(dbBillingAddress ?? stripeOrderDetails?.billingAddress),
         stripe_shipping_address: stripeOrderDetails?.shippingAddress ?? null,
         stripeShippingAddress: stripeOrderDetails?.shippingAddress ?? null,
         stripeShippingAddressText: formatStripeAddress(stripeOrderDetails?.shippingAddress),
