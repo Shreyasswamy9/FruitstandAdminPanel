@@ -185,14 +185,22 @@ export function createAdminApp(): express.Express {
 			req.user.email === process.env.ADMIN_EMAIL;
 		res.send(`
 			<!DOCTYPE html><html><head><title>Dashboard</title>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
 			<style>
+				*{box-sizing:border-box}
 				body{font-family:Arial;margin:0;background:#f5f5f5}
-				.header{background:#667eea;color:#fff;padding:18px;display:flex;justify-content:space-between;align-items:center}
-				.grid{max-width:1100px;margin:25px auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;padding:0 20px}
-				.card{background:#fff;padding:16px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.08);text-decoration:none;color:#333;display:block}
+				.header{background:#667eea;color:#fff;padding:clamp(12px,4vw,18px);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+				.header > div:first-child{font-size:clamp(16px,4vw,20px);font-weight:600}
+				.header > div:last-child{display:flex;align-items:center;gap:clamp(6px,2vw,12px);font-size:clamp(12px,3vw,14px);flex-wrap:wrap}
+				.grid{max-width:1100px;margin:clamp(16px,4vw,25px) auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:clamp(12px,3vw,16px);padding:0 clamp(12px,4vw,20px)}
+				@media(max-width:640px){.grid{grid-template-columns:1fr;gap:clamp(10px,3vw,12px)}}
+				.card{background:#fff;padding:clamp(14px,3vw,16px);border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.08);text-decoration:none;color:#333;display:block;transition:all 0.3s;cursor:pointer}
 				.card:hover{box-shadow:0 6px 18px rgba(0,0,0,.12);transform:translateY(-2px)}
-				.icon{font-size:26px} .title{font-weight:600;margin:6px 0 4px;font-size:15px} .desc{font-size:12px;color:#666}
-				.logout{background:#dc3545;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer}
+				.icon{font-size:clamp(22px,5vw,26px);line-height:1}
+				.title{font-weight:600;margin:clamp(6px,2vw,8px) 0 clamp(2px,1vw,4px);font-size:clamp(13px,3vw,15px)}
+				.desc{font-size:clamp(11px,2.5vw,12px);color:#666}
+				.logout{background:#dc3545;color:#fff;border:none;padding:clamp(6px,1.5vw,8px) clamp(10px,2vw,14px);border-radius:6px;cursor:pointer;font-size:clamp(11px,2.5vw,13px);white-space:nowrap}
+				.logout:hover{background:#c82333}
 			</style></head><body>
 			<div class="header">
 				<div>🍎 Admin Panel</div>

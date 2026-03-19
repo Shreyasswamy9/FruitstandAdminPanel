@@ -1602,8 +1602,8 @@ function generateOrderDetailPage(req: any) {
       </div>
 
       <!-- Shipping Label Modal -->
-      <div id="label-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;overflow:hidden;padding:10px">
-        <div style="background:white;border-radius:12px;padding:0;max-width:520px;width:100%;height:auto;max-height:calc(100vh - 20px);box-shadow:0 20px 60px rgba(0,0,0,0.3);display:flex;flex-direction:column;overflow:hidden" id="modal-content">
+      <div id="label-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:clamp(8px,2vw,20px);-webkit-overflow-scrolling:touch">
+        <div style="background:white;border-radius:12px;padding:0;max-width:520px;width:100%;height:auto;max-height:calc(100vh - clamp(16px,4vw,40px));box-shadow:0 20px 60px rgba(0,0,0,0.3);display:flex;flex-direction:column;overflow:hidden;margin:auto" id="modal-content">
           
           <!-- Header with step indicator -->
           <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:16px;border-radius:12px 12px 0 0">
@@ -1658,7 +1658,7 @@ function generateOrderDetailPage(req: any) {
             <!-- Step 3: Shipping Service -->
             <div id="step-3" style="display:none">
               <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">🚚 Select Shipping Service</h3>
-              <div id="service-options" style="width:100%;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(150px,40vw,200px),1fr));gap:10px;margin-bottom:10px"></div>
+              <div id="service-options" style="width:100%;padding:0;display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px"></div>
             </div>
 
             <!-- Step 4: Addresses -->
@@ -2346,16 +2346,16 @@ function generateOrderDetailPage(req: any) {
                   return a.localeCompare(b);
                 });
                 providers.forEach(provider => {
-                  html += '<div style="border:2px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff">';
-                  html += '<div style="font-weight:700;font-size:15px;margin-bottom:12px;color:#374151;border-bottom:2px solid #e2e8f0;padding-bottom:10px;text-align:center">' + provider + '</div>';
-                  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+                  html += '<div style="border:2px solid #e2e8f0;border-radius:12px;padding:clamp(10px,3vw,16px);background:#fff;margin-bottom:12px">';
+                  html += '<div style="font-weight:700;font-size:clamp(13px,3.5vw,15px);margin-bottom:clamp(8px,2vw,12px);color:#374151;border-bottom:2px solid #e2e8f0;padding-bottom:clamp(6px,1.5vw,10px);text-align:center">' + provider + '</div>';
+                  html += '<div style="display:flex;flex-direction:column;gap:clamp(6px,2vw,10px);">';
                   grouped[provider].forEach(rate => {
                     const isSelected = rate.object_id === selectedRateId;
                     const serviceName = rate.servicelevel.name;
                     const amount = parseFloat(rate.amount).toFixed(2);
                     const days = rate.estimated_days || '?';
                     const buttonClass = isSelected ? 'ship-rate-btn selected' : 'ship-rate-btn';
-                    html += '<button type="button" class="' + buttonClass + '" data-rate-id="' + rate.object_id + '" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 14px;border:2px solid #e2e8f0;border-radius:10px;background:#fff;color:#222;font-size:13px;cursor:pointer;transition:all 0.18s;font-weight:600;box-shadow:0 1px 3px #e2e8f0;outline:none;position:relative;white-space:normal;text-align:center;">' + serviceName + '<span style="color:#667eea;font-weight:600;font-size:14px">$' + amount + '</span><span style="color:#718096;font-size:12px">' + days + ' days</span><span class="checkmark-icon" style="position:absolute;top:8px;right:10px;color:#2563eb;font-size:16px;display:none">✓</span></button>';
+                    html += '<button type="button" class="' + buttonClass + '" data-rate-id="' + rate.object_id + '" style="display:grid;grid-template-columns:1fr auto;align-items:center;gap:clamp(8px,2vw,12px);padding:clamp(10px,2vw,14px);border:2px solid ' + (isSelected ? '#667eea' : '#e2e8f0') + ';border-radius:10px;background:' + (isSelected ? '#f3f4ff' : '#fff') + ';color:#222;font-size:clamp(12px,3vw,13px);cursor:pointer;transition:all 0.18s;font-weight:600;box-shadow:0 1px 3px #e2e8f0;outline:none;position:relative;text-align:left;width:100%"><div style="flex:1"><div style="font-weight:700;margin-bottom:4px">' + serviceName + '</div><div style="color:#718096;font-size:clamp(10px,2.5vw,11px)">Est. ' + days + ' day' + (days != 1 ? 's' : '') + '</div></div><div style="text-align:right;white-space:nowrap"><div style="color:#667eea;font-weight:700;font-size:clamp(13px,3vw,16px)">$' + amount + '</div><span class="checkmark-icon" style="position:absolute;top:8px;right:10px;color:#2563eb;font-size:18px;display:' + (isSelected ? 'block' : 'none') + '">✓</span></div></button>';
                   });
                   html += '</div></div>';
                 });
@@ -2366,10 +2366,14 @@ function generateOrderDetailPage(req: any) {
                     // Remove selected class and hide checkmark from all buttons
                     Array.from(optionsDiv.querySelectorAll('.ship-rate-btn')).forEach(b => {
                       b.classList.remove('selected');
+                      b.style.borderColor = '#e2e8f0';
+                      b.style.background = '#fff';
                       b.querySelector('.checkmark-icon').style.display = 'none';
                     });
                     // Add selected class and show checkmark for clicked button
                     this.classList.add('selected');
+                    this.style.borderColor = '#667eea';
+                    this.style.background = '#f3f4ff';
                     this.querySelector('.checkmark-icon').style.display = 'block';
                     optionsDiv.dataset.selected = this.getAttribute('data-rate-id');
                   });
