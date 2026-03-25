@@ -1015,7 +1015,8 @@ export function registerOrdersRoutes(
         await mailchimp.lists.setListMember(process.env.MAILCHIMP_LIST_ID, subscriberHash, {
           email_address: email,
           status_if_new: 'subscribed',
-          merge_fields: { TEXTAREAY: String(trackingNumber), NUMBER19B: String(orderNumber) }
+          merge_fields: { TEXTAREAY: String(trackingNumber), 
+            NUMBER19B: String(orderNumber) }
         });
       } catch (e: any) {
         console.error('Mailchimp setListMember failed:', e?.response?.body?.detail || e?.message || e);
@@ -1620,49 +1621,8 @@ function generateOrderDetailPage(req: any) {
           <!-- Content -->
           <div style="overflow-y:auto;flex:1;padding:clamp(14px,4vw,24px)">
             
-            <!-- Step 1: Template Selection -->
+            <!-- Step 1: Confirm Addresses (MOVED FIRST) -->
             <div id="step-1" style="display:block">
-              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📦 Select Package Template</h3>
-              <div id="template-buttons" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(110px,25vw,140px),1fr));gap:10px;margin-bottom:16px"></div>
-              <div style="padding:12px;background:#f0f7ff;border-left:4px solid #4299e1;border-radius:6px;font-size:13px;color:#2c5aa0">
-                ℹ️ Templates store pre-set dimensions and weight for quick access.
-              </div>
-            </div>
-
-            <!-- Step 2: Dimensions & Weight -->
-            <div id="step-2" style="display:none">
-              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📏 Package Dimensions & Weight</h3>
-              <div style="margin-bottom:14px">
-                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">Dimensions (inches)</label>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-                  <div>
-                    <input type="number" id="pkg-length" value="5" min="1" placeholder="Length" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
-                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">L</div>
-                  </div>
-                  <div>
-                    <input type="number" id="pkg-width" value="5" min="1" placeholder="Width" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
-                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">W</div>
-                  </div>
-                  <div>
-                    <input type="number" id="pkg-height" value="5" min="1" placeholder="Height" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
-                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">H</div>
-                  </div>
-                </div>
-              </div>
-              <div style="margin-bottom:12px">
-                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">Weight (lbs)</label>
-                <input type="number" id="pkg-weight" value="2" min="0.1" step="0.1" placeholder="Weight" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
-              </div>
-            </div>
-
-            <!-- Step 3: Shipping Service -->
-            <div id="step-3" style="display:none">
-              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">🚚 Select Shipping Service</h3>
-              <div id="service-options" style="width:100%;padding:0;display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px"></div>
-            </div>
-
-            <!-- Step 4: Addresses -->
-            <div id="step-4" style="display:none">
               <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📍 Confirm Addresses</h3>
               
               <div style="margin-bottom:12px;padding:10px;background:#f0fff4;border-radius:8px;border-left:4px solid #48bb78">
@@ -1699,6 +1659,47 @@ function generateOrderDetailPage(req: any) {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <!-- Step 2: Template Selection -->
+            <div id="step-2" style="display:none">
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📦 Select Package Template</h3>
+              <div id="template-buttons" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(110px,25vw,140px),1fr));gap:10px;margin-bottom:16px"></div>
+              <div style="padding:12px;background:#f0f7ff;border-left:4px solid #4299e1;border-radius:6px;font-size:13px;color:#2c5aa0">
+                ℹ️ Templates store pre-set dimensions and weight for quick access.
+              </div>
+            </div>
+
+            <!-- Step 3: Dimensions & Weight -->
+            <div id="step-3" style="display:none">
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">📏 Package Dimensions & Weight</h3>
+              <div style="margin-bottom:14px">
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">Dimensions (inches)</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                  <div>
+                    <input type="number" id="pkg-length" value="5" min="1" placeholder="Length" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">L</div>
+                  </div>
+                  <div>
+                    <input type="number" id="pkg-width" value="5" min="1" placeholder="Width" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">W</div>
+                  </div>
+                  <div>
+                    <input type="number" id="pkg-height" value="5" min="1" placeholder="Height" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <div style="font-size:clamp(10px,2.5vw,11px);color:#718096;margin-top:3px;text-align:center;font-weight:600">H</div>
+                  </div>
+                </div>
+              </div>
+              <div style="margin-bottom:12px">
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:clamp(12px,3vw,13px);color:#2d3748">Weight (lbs)</label>
+                <input type="number" id="pkg-weight" value="2" min="0.1" step="0.1" placeholder="Weight" style="width:100%;padding:8px;border:2px solid #e2e8f0;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+              </div>
+            </div>
+
+            <!-- Step 4: Shipping Service -->
+            <div id="step-4" style="display:none">
+              <h3 style="margin:0 0 12px 0;color:#2d3748;font-size:clamp(15px,4vw,17px)">🚚 Select Shipping Service</h3>
+              <div id="service-options" style="width:100%;padding:0;display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px"></div>
             </div>
 
             <!-- Step 5: Review & Purchase -->
@@ -2122,8 +2123,8 @@ function generateOrderDetailPage(req: any) {
           document.getElementById('next-btn').style.display = step < 5 ? 'block' : 'none';
           document.getElementById('purchase-btn').style.display = step === 5 ? 'block' : 'none';
 
-          // Load shipping rates for step 3
-          if (step === 3) {
+          // Load shipping rates for step 4 (now shipping service step, previously step 3)
+          if (step === 4) {
             const length = document.getElementById('pkg-length').value || '5';
             const width = document.getElementById('pkg-width').value || '5';
             const height = document.getElementById('pkg-height').value || '5';
@@ -2138,28 +2139,8 @@ function generateOrderDetailPage(req: any) {
         }
 
         function nextStep() {
-          if (currentStep === 1 && !selectedTemplate) {
-            alert('Please select a template');
-            return;
-          }
-          if (currentStep === 2) {
-            const l = document.getElementById('pkg-length').value;
-            const w = document.getElementById('pkg-width').value;
-            const h = document.getElementById('pkg-height').value;
-            const wt = document.getElementById('pkg-weight').value;
-            if (!l || !w || !h || !wt) {
-              alert('Please fill in all dimensions and weight');
-              return;
-            }
-          }
-          if (currentStep === 3) {
-            const optionsDiv = document.getElementById('service-options');
-            if (!optionsDiv.dataset.selected) {
-              alert('Please select a shipping service');
-              return;
-            }
-          }
-          if (currentStep === 4) {
+          if (currentStep === 1) {
+            // Validate addresses first
             const dName = document.getElementById('dest-name').value;
             const dStreet1 = document.getElementById('dest-street1').value;
             const dCity = document.getElementById('dest-city').value;
@@ -2172,6 +2153,27 @@ function generateOrderDetailPage(req: any) {
             const sZip = document.getElementById('ship-zip').value;
             if (!dName || !dStreet1 || !dCity || !dState || !dZip || !sName || !sStreet1 || !sCity || !sState || !sZip) {
               alert('Please fill in all required address fields');
+              return;
+            }
+          }
+          if (currentStep === 2 && !selectedTemplate) {
+            alert('Please select a template');
+            return;
+          }
+          if (currentStep === 3) {
+            const l = document.getElementById('pkg-length').value;
+            const w = document.getElementById('pkg-width').value;
+            const h = document.getElementById('pkg-height').value;
+            const wt = document.getElementById('pkg-weight').value;
+            if (!l || !w || !h || !wt) {
+              alert('Please fill in all dimensions and weight');
+              return;
+            }
+          }
+          if (currentStep === 4) {
+            const optionsDiv = document.getElementById('service-options');
+            if (!optionsDiv.dataset.selected) {
+              alert('Please select a shipping service');
               return;
             }
           }
