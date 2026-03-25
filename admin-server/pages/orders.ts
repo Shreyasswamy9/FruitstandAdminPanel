@@ -761,8 +761,8 @@ export function registerOrdersRoutes(
           state: bodyAddressTo?.state || order.shipping_state,
           zip: bodyAddressTo?.zip || order.shipping_postal_code,
           country: bodyAddressTo?.country || order.shipping_country || 'US',
-          email: order.shipping_email,
-          phone: order.shipping_phone
+          email: bodyAddressTo?.email || order.shipping_email || 'customer@example.com',
+          phone: bodyAddressTo?.phone || order.shipping_phone || '5551234567'
         };
         // Create shipment using individual address fields
         console.log('SHIPPO REQUEST - FROM:', JSON.stringify(fromAddress), 'TO:', JSON.stringify(resolvedAddressTo));
@@ -1101,8 +1101,8 @@ export function registerOrdersRoutes(
         state: order.shipping_state,
         zip: order.shipping_postal_code,
         country: order.shipping_country || 'US',
-        email: order.shipping_email,
-        phone: order.shipping_phone
+        email: order.shipping_email || 'customer@example.com',
+        phone: order.shipping_phone || '5551234567'
       };
       console.log('LABEL SHIPPO REQUEST - FROM:', JSON.stringify(fromAddress), 'TO:', JSON.stringify(labelAddressTo));
       const shipment = await shippoClient.shipments.create({
@@ -1639,6 +1639,10 @@ function generateOrderDetailPage(req: any) {
                     <input type="text" id="dest-zip" placeholder="ZIP" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                     <input type="text" id="dest-country" placeholder="US" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
                   </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <input type="tel" id="dest-phone" placeholder="Phone" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                    <input type="email" id="dest-email" placeholder="Email" style="padding:7px;border:2px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:clamp(11px,3vw,13px)">
+                  </div>
                 </div>
               </div>
 
@@ -2093,6 +2097,8 @@ function generateOrderDetailPage(req: any) {
             document.getElementById('dest-state').value = o.shipping_state || '';
             document.getElementById('dest-zip').value = o.shipping_postal_code || '';
             document.getElementById('dest-country').value = o.shipping_country || 'US';
+            document.getElementById('dest-phone').value = o.shipping_phone || o.phone || '';
+            document.getElementById('dest-email').value = o.shipping_email || o.email || o.customerEmail || '';
           }
 
           // Load templates
@@ -2313,7 +2319,9 @@ function generateOrderDetailPage(req: any) {
             city: document.getElementById('dest-city').value,
             state: document.getElementById('dest-state').value,
             zip: document.getElementById('dest-zip').value,
-            country: document.getElementById('dest-country').value || 'US'
+            country: document.getElementById('dest-country').value || 'US',
+            phone: document.getElementById('dest-phone').value || '',
+            email: document.getElementById('dest-email').value || ''
           };
 
           console.log('Loading rates with:', { length, width, height, weight, addressFrom, addressTo });
