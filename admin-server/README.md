@@ -119,6 +119,12 @@ The following environment variables are **required** for the application to work
 - `POSTHOG_PROJECT_ID` - Project ID from PostHog project settings
 - `POSTHOG_HOST` - (Optional) PostHog host URL, defaults to `https://app.posthog.com`
 
+### Mailchimp Integration (Optional)
+- `MAILCHIMP_API_KEY` - API key from Mailchimp account settings
+- `MAILCHIMP_SERVER_PREFIX` - Server prefix from Mailchimp API key (e.g., `us1`, `us2`)
+- `MAILCHIMP_LIST_ID` - Email audience/list ID for syncing customer emails
+- `MAILCHIMP_SMS_AUDIENCE_ID` - SMS audience ID for syncing customer phone numbers (if using Mailchimp SMS)
+
 ## Vercel Deployment
 
 ### Setup

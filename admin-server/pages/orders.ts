@@ -1015,7 +1015,7 @@ export function registerOrdersRoutes(
         await mailchimp.lists.setListMember(process.env.MAILCHIMP_LIST_ID, subscriberHash, {
           email_address: email,
           status_if_new: 'subscribed',
-          merge_fields: { TEXTAREAY: String(trackingNumber) }
+          merge_fields: { TEXTAREAY: String(trackingNumber), NUMBER19B: String(orderNumber) }
         });
       } catch (e: any) {
         console.error('Mailchimp setListMember failed:', e?.response?.body?.detail || e?.message || e);

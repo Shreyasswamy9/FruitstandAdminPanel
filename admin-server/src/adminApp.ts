@@ -254,7 +254,7 @@ export function createAdminApp(): express.Express {
 	registerCommunicationsRoutes(app, { requireAuth });
 	registerActivityRoutes(app, { prisma, logActivity, requireAdmin });
 	registerInventoryRoutes(app, { requireAuth });
-	registerCustomersRoutes(app, { requireAuth });
+	registerCustomersRoutes(app, { requireAuth, prisma });
 	registerCollectionsRoutes(app, { requireAuth });
 	registerReviewsRoutes(app, { prisma, logActivity, requireAuth });
 	registerTicketsRoutes(app, { prisma, logActivity, requireAuth });

@@ -11,6 +11,13 @@ declare module '@mailchimp/mailchimp_marketing' {
     merge_fields?: Record<string, unknown>;
   }
 
+  interface MailchimpSmsContact {
+    phone_number: string;
+    email_address?: string;
+    status?: 'subscribed' | 'unsubscribed' | 'pending';
+    merge_fields?: Record<string, unknown>;
+  }
+
   interface MailchimpListsApi {
     addListMember(listId: string, member: MailchimpListMember): Promise<unknown>;
     setListMember(listId: string, subscriberHash: string, member: MailchimpListMember): Promise<unknown>;
@@ -31,10 +38,15 @@ declare module '@mailchimp/mailchimp_marketing' {
     trigger(journeyId: string, stepId: string, payload: MailchimpCustomerJourneysTriggerPayload): Promise<unknown>;
   }
 
+  interface MailchimpSmsCampaignApi {
+    addContact(audienceId: string, contact: MailchimpSmsContact): Promise<unknown>;
+  }
+
   interface MailchimpClient {
     setConfig(config: MailchimpConfig): void;
     lists: MailchimpListsApi;
     customerJourneys: MailchimpCustomerJourneysApi;
+    smsCampaigns?: MailchimpSmsCampaignApi;
   }
 
   const mailchimp: MailchimpClient;
